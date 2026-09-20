@@ -8,6 +8,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,12 +30,16 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -91,8 +97,33 @@ fun CharacterVaultScreen(
     val characters by viewModel.allCharacters.collectAsState()
     val editorState by viewModel.editorState.collectAsState()
 
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedRoleFilter by remember { mutableStateOf("Tous") }
     var showEditorDialog by remember { mutableStateOf(false) }
     var characterToEdit by remember { mutableStateOf<CharacterProfile?>(null) }
+
+    val filterOptions = listOf("Tous", "Shonen", "Manhua", "Cyber/Comics", "Seinen")
+
+    val filteredCharacters = remember(characters, searchQuery, selectedRoleFilter) {
+        characters.filter { char ->
+            val matchesQuery = searchQuery.isBlank() ||
+                char.name.contains(searchQuery, ignoreCase = true) ||
+                char.role.contains(searchQuery, ignoreCase = true) ||
+                char.hairStyleColor.contains(searchQuery, ignoreCase = true) ||
+                char.clothingDescription.contains(searchQuery, ignoreCase = true) ||
+                char.distinctiveFeatures.contains(searchQuery, ignoreCase = true)
+
+            val matchesFilter = when (selectedRoleFilter) {
+                "Shonen" -> char.role.contains("Shonen", ignoreCase = true)
+                "Manhua" -> char.role.contains("Manhua", ignoreCase = true) || char.role.contains("Céleste", ignoreCase = true)
+                "Cyber/Comics" -> char.role.contains("Cyber", ignoreCase = true) || char.role.contains("Comics", ignoreCase = true)
+                "Seinen" -> char.role.contains("Seinen", ignoreCase = true)
+                else -> true
+            }
+
+            matchesQuery && matchesFilter
+        }
+    }
 
     Scaffold(
         floatingActionButton = {
@@ -105,7 +136,7 @@ fun CharacterVaultScreen(
                 contentColor = Color.White,
                 modifier = Modifier.testTag("fab_add_character")
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Créer un Héros")
+                Icon(Icons.Default.Add, contentDescription = "Créer un Modèle de Personnage")
             }
         },
         containerColor = InkMidnight,
@@ -121,7 +152,7 @@ fun CharacterVaultScreen(
             item {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "BIBLE DES PERSONNAGES (ADN VISUEL)",
+                    text = "BIBLIOTHÈQUE DE MODÈLES RÉUTILISABLES",
                     color = MangaCrimson,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Black,
@@ -134,14 +165,112 @@ fun CharacterVaultScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Définissez ici l'anatomie, les cheveux, la tenue et les images de référence pour que l'IA conserve une ressemblance parfaite entre les cases.",
+                    text = "Enregistrez ici vos fiches de personnages réutilisables (visages, tenues, traits distinctifs et ancres visuelles) pour garantir une ressemblance parfaite d'une case à l'autre.",
                     color = TextSecondary,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
                 )
+
+                // Search Bar
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Rechercher un modèle (nom, visage, tenue...)", color = TextSecondary, fontSize = 13.sp) },
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(20.dp))
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotBlank()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Effacer la recherche", tint = TextSecondary)
+                            }
+                        }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = InkSurface,
+                        unfocusedContainerColor = InkSurface,
+                        focusedBorderColor = MangaCrimson,
+                        unfocusedBorderColor = InkBorder,
+                        focusedTextColor = MangaPaperWhite,
+                        unfocusedTextColor = MangaPaperWhite
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("character_search_field")
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Archetype / Category Filter Chips
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    filterOptions.forEach { option ->
+                        val isSelected = selectedRoleFilter == option
+                        Surface(
+                            color = if (isSelected) MangaCrimson.copy(alpha = 0.25f) else InkSurfaceVariant,
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, if (isSelected) MangaCrimson else InkBorder),
+                            modifier = Modifier
+                                .clickable { selectedRoleFilter = option }
+                                .testTag("filter_chip_$option")
+                        ) {
+                            Text(
+                                text = option,
+                                color = if (isSelected) Color.White else MangaPaperWhite,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
             }
 
-            items(characters) { character ->
+            if (filteredCharacters.isEmpty()) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = InkSurface),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, InkBorder),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Face,
+                                contentDescription = null,
+                                tint = QiGold,
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = if (searchQuery.isNotBlank()) "Aucun modèle ne correspond à la recherche" else "Aucun modèle dans cette catégorie",
+                                color = MangaPaperWhite,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Créez un nouveau modèle de personnage réutilisable avec le bouton ci-dessous.",
+                                color = TextSecondary,
+                                fontSize = 12.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+
+            items(filteredCharacters) { character ->
                 val isActive = character.id == editorState.selectedCharacterId
                 CharacterCard(
                     character = character,
@@ -153,6 +282,15 @@ fun CharacterVaultScreen(
                     onEdit = {
                         characterToEdit = character
                         showEditorDialog = true
+                    },
+                    onDuplicate = {
+                        val copy = character.copy(
+                            id = 0,
+                            name = "${character.name} (Variante)",
+                            visualUid = com.example.data.model.generateCharacterUid(character.name),
+                            appearanceCount = 0
+                        )
+                        viewModel.saveCharacter(copy)
                     },
                     onDelete = {
                         viewModel.deleteCharacter(character)
@@ -190,6 +328,7 @@ fun CharacterCard(
     isActiveInStudio: Boolean,
     onSelect: () -> Unit,
     onEdit: () -> Unit,
+    onDuplicate: () -> Unit = {},
     onDelete: () -> Unit,
     onRegenerateUid: () -> Unit,
     onClearFirstAppearance: () -> Unit,
@@ -266,6 +405,16 @@ fun CharacterCard(
                     )
                 }
 
+                IconButton(
+                    onClick = onDuplicate,
+                    modifier = Modifier.testTag("duplicate_character_${character.id}")
+                ) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "Dupliquer comme nouveau modèle",
+                        tint = QiGold
+                    )
+                }
                 IconButton(onClick = onEdit) {
                     Icon(Icons.Default.Edit, contentDescription = "Modifier", tint = TextSecondary)
                 }
@@ -630,6 +779,43 @@ fun CharacterEditDialog(
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    // Quick Outfit Preset Suggestions
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Exemples de tenues réutilisables :",
+                        color = TextSecondary,
+                        fontSize = 11.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            "Veste noire et bandages",
+                            "Kimono de combat blanc/rouge",
+                            "Uniforme scolaire manga",
+                            "Robe Hanfu en soie brodée",
+                            "Armure tactique cybernétique"
+                        ).forEach { outfitPreset ->
+                            Surface(
+                                color = InkSurfaceVariant,
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(0.5.dp, InkBorder),
+                                modifier = Modifier.clickable { clothing = outfitPreset }
+                            ) {
+                                Text(
+                                    text = outfitPreset,
+                                    color = QiGold,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
                 }
 
                 item {
@@ -645,6 +831,45 @@ fun CharacterEditDialog(
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    // Quick Distinctive Features Suggestions
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Traits distinctifs fréquents :",
+                        color = TextSecondary,
+                        fontSize = 11.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            "Katana spectrale à la ceinture",
+                            "Cicatrice sur la joue gauche",
+                            "Aura spirituelle dorée",
+                            "Tatouage tribal sur le bras",
+                            "Visière holographique lumineuse"
+                        ).forEach { traitPreset ->
+                            Surface(
+                                color = InkSurfaceVariant,
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(0.5.dp, InkBorder),
+                                modifier = Modifier.clickable {
+                                    distinctive = if (distinctive.isBlank()) traitPreset else "$distinctive, $traitPreset"
+                                }
+                            ) {
+                                Text(
+                                    text = "+ $traitPreset",
+                                    color = ManhuaCyan,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
                 }
 
                 item {

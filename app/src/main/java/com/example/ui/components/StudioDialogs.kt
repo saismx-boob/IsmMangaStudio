@@ -197,7 +197,7 @@ fun CharacterSelectorDialog(
             ) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Gérer la Bible des Héros")
+                Text("Bibliothèque de Modèles")
             }
         },
         dismissButton = {

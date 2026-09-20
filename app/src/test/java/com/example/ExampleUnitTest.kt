@@ -102,5 +102,24 @@ class ExampleUnitTest {
     val safeLowIndex = invalidLowIndex.coerceIn(0, panels.size - 1)
     assertEquals(0, safeLowIndex)
   }
+
+  @Test
+  fun testCharacterProfileModelConsistency() {
+    val profile = com.example.data.model.CharacterProfile(
+      id = 1L,
+      name = "Ren",
+      role = "Héros Shonen",
+      hairStyleColor = "Cheveux noirs hérissés",
+      eyeDescription = "Yeux dorés",
+      clothingDescription = "Kimono rouge et bandages",
+      distinctiveFeatures = "Cicatrice joue gauche",
+      visualUid = "UID-REN-SHONEN-99"
+    )
+
+    assertEquals("Ren", profile.name)
+    assertEquals("Kimono rouge et bandages", profile.clothingDescription)
+    assertEquals("Cicatrice joue gauche", profile.distinctiveFeatures)
+    assertEquals("UID-REN-SHONEN-99", profile.visualUid)
+  }
 }
 

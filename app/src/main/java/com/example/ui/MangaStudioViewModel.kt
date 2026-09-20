@@ -37,6 +37,7 @@ data class StudioEditorState(
     val selectedCamera: CameraPerspective = CameraPerspective.MEDIUM_SHOT,
     val selectedCharacterId: Long? = 1L,
     val selectedBackgroundId: Long? = 1L,
+    val activePanelIndex: Int = 0,
     val referenceImagePath: String? = null,
     val dialogueText: String = "Je ne reculerai jamais !",
     val bubbleType: String = "SHOUT",
@@ -120,17 +121,34 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
             repository.getPanelsForPage(page.id).collect { panels ->
                 _currentPanels.value = panels
                 if (panels.isNotEmpty()) {
-                    val first = panels.first()
+                    val currentIdx = _editorState.value.activePanelIndex.coerceIn(0, panels.size - 1)
+                    val activePanel = panels.getOrNull(currentIdx) ?: panels.first()
                     _editorState.value = _editorState.value.copy(
-                        activePrompt = first.userPrompt.ifBlank { _editorState.value.activePrompt },
-                        selectedCharacterId = first.characterId ?: _editorState.value.selectedCharacterId,
-                        selectedBackgroundId = first.backgroundId ?: _editorState.value.selectedBackgroundId,
-                        dialogueText = first.dialogueText ?: "",
-                        bubbleType = first.bubbleType
+                        activePanelIndex = currentIdx,
+                        activePrompt = activePanel.userPrompt.ifBlank { _editorState.value.activePrompt },
+                        selectedCharacterId = activePanel.characterId ?: _editorState.value.selectedCharacterId,
+                        selectedBackgroundId = activePanel.backgroundId ?: _editorState.value.selectedBackgroundId,
+                        dialogueText = activePanel.dialogueText ?: "",
+                        bubbleType = activePanel.bubbleType
                     )
                 }
             }
         }
+    }
+
+    fun selectPanelForEditing(panelIndex: Int) {
+        val panels = _currentPanels.value
+        val safeIndex = panelIndex.coerceIn(0, (panels.size - 1).coerceAtLeast(0))
+        val targetPanel = panels.getOrNull(safeIndex)
+        _editorState.value = _editorState.value.copy(
+            activePanelIndex = safeIndex,
+            activePrompt = targetPanel?.userPrompt?.ifBlank { _editorState.value.activePrompt } ?: _editorState.value.activePrompt,
+            selectedCharacterId = targetPanel?.characterId ?: _editorState.value.selectedCharacterId,
+            selectedBackgroundId = targetPanel?.backgroundId ?: _editorState.value.selectedBackgroundId,
+            dialogueText = targetPanel?.dialogueText ?: "",
+            bubbleType = targetPanel?.bubbleType ?: _editorState.value.bubbleType,
+            statusMessage = "Édition active : Case #${safeIndex + 1}"
+        )
     }
 
     // Input handlers

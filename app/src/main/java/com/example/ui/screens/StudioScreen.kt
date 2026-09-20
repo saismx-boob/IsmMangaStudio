@@ -82,6 +82,7 @@ import com.example.ui.components.DialogueBubbleEditorDialog
 import com.example.ui.components.ExportPanelDialog
 import com.example.ui.components.MangaArtAndInkControlSection
 import com.example.ui.components.MangaPanelCanvas
+import com.example.ui.components.RealTimePageCompositionPreview
 import com.example.util.MangaPanelExporter
 import android.graphics.Bitmap
 import android.widget.Toast
@@ -343,6 +344,21 @@ fun StudioScreen(
             }
         }
 
+        // Live Real-Time Page Composition Preview (displays full manga page while editing each panel)
+        item {
+            RealTimePageCompositionPreview(
+                page = selectedPage,
+                panels = panels,
+                currentEditingIndex = editorState.activePanelIndex,
+                isGenerating = editorState.isGenerating,
+                characters = characters,
+                backgrounds = backgrounds,
+                onSelectPanelToEdit = { idx ->
+                    viewModel.selectPanelForEditing(idx)
+                }
+            )
+        }
+
         // Visual Consistency DNA Anchor Card
         item {
             ConsistencyDNASummaryCard(
@@ -414,7 +430,7 @@ fun StudioScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "DESCRIPTION DE LA CASE",
+                            text = "DESCRIPTION DE LA CASE #${editorState.activePanelIndex + 1}",
                             style = MaterialTheme.typography.labelMedium,
                             color = MangaCrimson,
                             fontWeight = FontWeight.Black,
@@ -600,7 +616,7 @@ fun StudioScreen(
 
                     // Generate Button
                     Button(
-                        onClick = { viewModel.generatePanel(0) },
+                        onClick = { viewModel.generatePanel(editorState.activePanelIndex) },
                         enabled = !editorState.isGenerating,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MangaCrimson,
@@ -629,7 +645,7 @@ fun StudioScreen(
                             Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.White)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "GÉNÉRER LA CASE AVEC COHÉRENCE IA",
+                                text = "GÉNÉRER LA CASE #${editorState.activePanelIndex + 1} AVEC COHÉRENCE IA",
                                 color = Color.White,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 14.sp,

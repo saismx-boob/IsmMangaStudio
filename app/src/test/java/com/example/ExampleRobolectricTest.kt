@@ -11,7 +11,7 @@ import com.example.data.model.BackgroundProfile
 import com.example.data.model.CharacterProfile
 import com.example.data.model.MangaPage
 import com.example.data.model.MangaPanel
-import com.example.ui.screens.GridPageLayout
+import com.example.data.model.GridPageLayout
 import com.example.ui.screens.POSE_PRESETS
 import com.example.ui.components.BubbleShapeType
 import com.example.ui.components.TailDirection

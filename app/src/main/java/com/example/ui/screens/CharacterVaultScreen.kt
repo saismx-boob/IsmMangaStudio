@@ -30,12 +30,14 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Mood
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -109,15 +111,16 @@ fun CharacterVaultScreen(
             val matchesQuery = searchQuery.isBlank() ||
                 char.name.contains(searchQuery, ignoreCase = true) ||
                 char.role.contains(searchQuery, ignoreCase = true) ||
+                char.preferredArtStyle.contains(searchQuery, ignoreCase = true) ||
                 char.hairStyleColor.contains(searchQuery, ignoreCase = true) ||
                 char.clothingDescription.contains(searchQuery, ignoreCase = true) ||
                 char.distinctiveFeatures.contains(searchQuery, ignoreCase = true)
 
             val matchesFilter = when (selectedRoleFilter) {
-                "Shonen" -> char.role.contains("Shonen", ignoreCase = true)
-                "Manhua" -> char.role.contains("Manhua", ignoreCase = true) || char.role.contains("Céleste", ignoreCase = true)
-                "Cyber/Comics" -> char.role.contains("Cyber", ignoreCase = true) || char.role.contains("Comics", ignoreCase = true)
-                "Seinen" -> char.role.contains("Seinen", ignoreCase = true)
+                "Shonen" -> char.role.contains("Shonen", ignoreCase = true) || char.preferredArtStyle.contains("SHONEN", ignoreCase = true)
+                "Manhua" -> char.role.contains("Manhua", ignoreCase = true) || char.role.contains("Céleste", ignoreCase = true) || char.preferredArtStyle.contains("MANHUA", ignoreCase = true)
+                "Cyber/Comics" -> char.role.contains("Cyber", ignoreCase = true) || char.role.contains("Comics", ignoreCase = true) || char.preferredArtStyle.contains("COMIC", ignoreCase = true)
+                "Seinen" -> char.role.contains("Seinen", ignoreCase = true) || char.preferredArtStyle.contains("SEINEN", ignoreCase = true)
                 else -> true
             }
 
@@ -275,6 +278,7 @@ fun CharacterVaultScreen(
                 CharacterCard(
                     character = character,
                     isActiveInStudio = isActive,
+                    viewModel = viewModel,
                     onSelect = {
                         viewModel.selectCharacter(character.id)
                         onCharacterSelectedForStudio(character.id)
@@ -326,6 +330,7 @@ fun CharacterVaultScreen(
 fun CharacterCard(
     character: CharacterProfile,
     isActiveInStudio: Boolean,
+    viewModel: MangaStudioViewModel,
     onSelect: () -> Unit,
     onEdit: () -> Unit,
     onDuplicate: () -> Unit = {},
@@ -421,6 +426,98 @@ fun CharacterCard(
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, contentDescription = "Supprimer", tint = Color(0xFFEF4444))
                 }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Action: Aperçu Prompt Structuré Gemini
+            var showPromptDialog by remember { mutableStateOf(false) }
+            val structuredPrompt = remember(character) {
+                viewModel.buildStructuredCharacterPrompt(character)
+            }
+
+            OutlinedButton(
+                onClick = { showPromptDialog = true },
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = QiGold),
+                border = BorderStroke(1.dp, QiGold.copy(alpha = 0.5f)),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("view_gemini_prompt_${character.id}")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = QiGold,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Aperçu Prompt Structuré Gemini (Nom + Description + Tags)",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            if (showPromptDialog) {
+                val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+                AlertDialog(
+                    onDismissRequest = { showPromptDialog = false },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = QiGold)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Prompt Structuré Gemini : ${character.name}", color = MangaPaperWhite, fontSize = 16.sp)
+                        }
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                text = "Ce prompt concatène l'identité, les descriptions physiques et les tags de style pour garantir la cohérence visuelle dans l'API Gemini :",
+                                color = TextSecondary,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                            Surface(
+                                color = InkMidnight,
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, InkBorder),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(220.dp)
+                            ) {
+                                LazyColumn(modifier = Modifier.padding(10.dp)) {
+                                    item {
+                                        Text(
+                                            text = structuredPrompt,
+                                            color = QiGold,
+                                            fontSize = 11.sp,
+                                            lineHeight = 16.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(structuredPrompt))
+                                showPromptDialog = false
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MangaCrimson)
+                        ) {
+                            Text("Copier le Prompt", color = Color.White)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showPromptDialog = false }) {
+                            Text("Fermer", color = TextSecondary)
+                        }
+                    },
+                    containerColor = InkSurface,
+                    shape = RoundedCornerShape(12.dp)
+                )
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -578,6 +675,63 @@ fun CharacterCard(
                     .padding(10.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Surface(
+                        color = InkMidnight,
+                        shape = RoundedCornerShape(4.dp),
+                        border = BorderStroke(0.5.dp, InkBorder)
+                    ) {
+                        Text(
+                            text = "Âge: ${character.ageCategory}",
+                            color = QiGold,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Surface(
+                        color = InkMidnight,
+                        shape = RoundedCornerShape(4.dp),
+                        border = BorderStroke(0.5.dp, InkBorder)
+                    ) {
+                        Text(
+                            text = character.personalityMood,
+                            color = ManhuaCyan,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Surface(
+                        color = InkMidnight,
+                        shape = RoundedCornerShape(4.dp),
+                        border = BorderStroke(0.5.dp, MangaCrimson.copy(alpha = 0.6f))
+                    ) {
+                        Text(
+                            text = when (character.preferredArtStyle) {
+                                "MANGA_SHONEN" -> "Shonen"
+                                "MANHUA_QI" -> "Manhua Qi"
+                                "SEINEN_DARK" -> "Seinen"
+                                "CYBER_COMIC" -> "Cyber Comic"
+                                "SHOJO_ETHEREAL" -> "Shojo"
+                                else -> character.preferredArtStyle
+                            },
+                            color = Color(0xFFFCA5A5),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = "Expression: ${character.defaultExpression}",
+                    color = Color(0xFFF1F5F9),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
                 Text(
                     text = "Cheveux: ${character.hairStyleColor}",
                     color = Color(0xFFE2E8F0),
@@ -599,6 +753,42 @@ fun CharacterCard(
                         color = ManhuaCyan,
                         fontSize = 12.sp
                     )
+                }
+
+                val allRefImages = character.getReferenceImagesList()
+                if (allRefImages.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Galerie Références (${allRefImages.size}) :",
+                        color = QiGold,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        allRefImages.forEachIndexed { idx, path ->
+                            val file = File(path)
+                            if (file.exists()) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .border(1.dp, ManhuaCyan.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                                ) {
+                                    AsyncImage(
+                                        model = file,
+                                        contentDescription = "Réf #${idx + 1}",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -635,12 +825,20 @@ fun CharacterEditDialog(
     val context = LocalContext.current
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var role by remember { mutableStateOf(existing?.role ?: "Protagoniste Shonen") }
+    var ageCategory by remember { mutableStateOf(existing?.ageCategory ?: "Adolescent (16-18 ans)") }
+    var personalityMood by remember { mutableStateOf(existing?.personalityMood ?: "Déterminé & Calme") }
+    var defaultExpression by remember { mutableStateOf(existing?.defaultExpression ?: "Regard intense") }
+    var preferredArtStyle by remember { mutableStateOf(existing?.preferredArtStyle ?: "MANGA_SHONEN") }
     var hair by remember { mutableStateOf(existing?.hairStyleColor ?: "Cheveux noirs hérissés avec mèches") }
     var eyes by remember { mutableStateOf(existing?.eyeDescription ?: "Yeux dorés perçants") }
     var clothing by remember { mutableStateOf(existing?.clothingDescription ?: "Veste noire et bandages") }
     var distinctive by remember { mutableStateOf(existing?.distinctiveFeatures ?: "") }
     var visualUid by remember { mutableStateOf(existing?.visualUid ?: com.example.data.model.generateCharacterUid(name)) }
-    var refImagePath by remember { mutableStateOf(existing?.referenceImagePath) }
+    
+    // Multi-reference images management
+    var referenceImages by remember {
+        mutableStateOf<List<String>>(existing?.getReferenceImagesList() ?: emptyList())
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -654,7 +852,10 @@ fun CharacterEditDialog(
                         input.copyTo(output)
                     }
                 }
-                refImagePath = targetFile.absolutePath
+                val path = targetFile.absolutePath
+                if (!referenceImages.contains(path)) {
+                    referenceImages = referenceImages + path
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -734,6 +935,134 @@ fun CharacterEditDialog(
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
+                }
+
+                // New fields: Tranche d'Âge, Personnalité, Expression faciale type
+                item {
+                    Text("Tranche d'Âge / Maturité :", color = QiGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            "Enfant (8-12 ans)",
+                            "Adolescent (15-18 ans)",
+                            "Jeune adulte (20-25 ans)",
+                            "Adulte vétéran (30-40 ans)",
+                            "Maître ancien (60+ ans)"
+                        ).forEach { preset ->
+                            val isSelected = ageCategory == preset
+                            Surface(
+                                color = if (isSelected) QiGold.copy(alpha = 0.2f) else InkSurfaceVariant,
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, if (isSelected) QiGold else InkBorder),
+                                modifier = Modifier.clickable { ageCategory = preset }
+                            ) {
+                                Text(
+                                    text = preset,
+                                    color = if (isSelected) QiGold else TextSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = personalityMood,
+                        onValueChange = { personalityMood = it },
+                        label = { Text("Tempérament / Personnalité (ex: Froid & Stratège, Énergique)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MangaCrimson,
+                            unfocusedBorderColor = InkBorder,
+                            focusedTextColor = MangaPaperWhite,
+                            unfocusedTextColor = MangaPaperWhite
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            "Déterminé & Calme",
+                            "Énergique & Rebelle",
+                            "Froid & Mystérieux",
+                            "Noble & Bienveillant",
+                            "Sombre & Vengeur"
+                        ).forEach { preset ->
+                            Surface(
+                                color = InkSurfaceVariant,
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(0.5.dp, InkBorder),
+                                modifier = Modifier.clickable { personalityMood = preset }
+                            ) {
+                                Text(
+                                    text = "+ $preset",
+                                    color = ManhuaCyan,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = defaultExpression,
+                        onValueChange = { defaultExpression = it },
+                        label = { Text("Expression Faciale Type (ex: Regard intense, Sourire narquois)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MangaCrimson,
+                            unfocusedBorderColor = InkBorder,
+                            focusedTextColor = MangaPaperWhite,
+                            unfocusedTextColor = MangaPaperWhite
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    Text("Style Artistique Associé (Tag) :", color = QiGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            "MANGA_SHONEN" to "Shonen Manga",
+                            "MANHUA_QI" to "Manhua Céleste (Qi)",
+                            "SEINEN_DARK" to "Seinen Sombre",
+                            "CYBER_COMIC" to "Cyber / Western Comic",
+                            "SHOJO_ETHEREAL" to "Shojo Éthéré"
+                        ).forEach { (styleKey, styleLabel) ->
+                            val isSelected = preferredArtStyle == styleKey
+                            Surface(
+                                color = if (isSelected) MangaCrimson.copy(alpha = 0.25f) else InkSurfaceVariant,
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, if (isSelected) MangaCrimson else InkBorder),
+                                modifier = Modifier.clickable { preferredArtStyle = styleKey }
+                            ) {
+                                Text(
+                                    text = styleLabel,
+                                    color = if (isSelected) MangaPaperWhite else TextSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
                 }
 
                 item {
@@ -872,60 +1201,103 @@ fun CharacterEditDialog(
                     }
                 }
 
+                // Reference images section: multi-image introduction & management
                 item {
-                    // Reference image attachment button
-                    OutlinedButton(
-                        onClick = {
-                            photoPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = ManhuaCyan),
-                        border = BorderStroke(1.dp, ManhuaCyan),
-                        modifier = Modifier.fillMaxWidth()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF1E293B), RoundedCornerShape(8.dp))
+                            .padding(10.dp)
                     ) {
-                        Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            if (refImagePath != null) "Changer l'image de référence" else "Associer une image de référence"
-                        )
-                    }
-
-                    val currentRef = refImagePath
-                    if (currentRef != null && File(currentRef).exists()) {
-                        Spacer(modifier = Modifier.height(8.dp))
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFF1E293B), RoundedCornerShape(8.dp))
-                                .padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            AsyncImage(
-                                model = File(currentRef),
-                                contentDescription = "Aperçu de l'image de référence",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = "Image de référence active",
-                                color = Color(0xFFE2E8F0),
-                                fontSize = 12.sp,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(
-                                onClick = { refImagePath = null },
-                                modifier = Modifier.size(28.dp)
-                            ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Supprimer la référence",
-                                    tint = Color(0xFFEF4444),
+                                    Icons.Default.Collections,
+                                    contentDescription = null,
+                                    tint = ManhuaCyan,
                                     modifier = Modifier.size(16.dp)
                                 )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Images de Référence (${referenceImages.size})",
+                                    color = MangaPaperWhite,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+
+                            Text(
+                                text = "Pour guidage visuel IA",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 10.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Add new reference image button
+                        OutlinedButton(
+                            onClick = {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = ManhuaCyan),
+                            border = BorderStroke(1.dp, ManhuaCyan),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Ajouter une image de référence (visage / tenue)")
+                        }
+
+                        // List of attached reference images
+                        if (referenceImages.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                referenceImages.forEachIndexed { index, path ->
+                                    val file = File(path)
+                                    if (file.exists()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(64.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .border(1.dp, QiGold, RoundedCornerShape(8.dp))
+                                        ) {
+                                            AsyncImage(
+                                                model = file,
+                                                contentDescription = "Réf #${index + 1}",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                            IconButton(
+                                                onClick = {
+                                                    referenceImages = referenceImages.filterIndexed { i, _ -> i != index }
+                                                },
+                                                modifier = Modifier
+                                                    .size(20.dp)
+                                                    .align(Alignment.TopEnd)
+                                                    .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = "Supprimer",
+                                                    tint = Color(0xFFEF4444),
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -936,16 +1308,27 @@ fun CharacterEditDialog(
             Button(
                 onClick = {
                     if (name.isNotBlank()) {
-                        val promptAnchor = "Anime character $name, $role, $hair, $eyes, wearing $clothing. $distinctive."
+                        val promptAnchor = "Anime character $name, $role, $ageCategory, temperament $personalityMood with $defaultExpression, $hair, $eyes, wearing $clothing. $distinctive."
+                        val primaryRef = referenceImages.firstOrNull()
+                        val secondaryRefs = if (referenceImages.size > 1) {
+                            referenceImages.drop(1).joinToString("||")
+                        } else {
+                            ""
+                        }
                         val profile = (existing ?: CharacterProfile(name = name)).copy(
                             name = name,
                             role = role,
+                            ageCategory = ageCategory,
+                            personalityMood = personalityMood,
+                            defaultExpression = defaultExpression,
+                            preferredArtStyle = preferredArtStyle,
                             hairStyleColor = hair,
                             eyeDescription = eyes,
                             clothingDescription = clothing,
                             distinctiveFeatures = distinctive,
                             visualUid = visualUid.ifBlank { com.example.data.model.generateCharacterUid(name) },
-                            referenceImagePath = refImagePath,
+                            referenceImagePath = primaryRef,
+                            secondaryReferenceImages = secondaryRefs,
                             promptAnchor = promptAnchor
                         )
                         onSave(profile)

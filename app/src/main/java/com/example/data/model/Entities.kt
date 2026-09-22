@@ -25,8 +25,24 @@ data class CharacterProfile(
     val firstAppearancePanelId: Long? = null,
     val appearanceCount: Int = 0,
     val canonicalSeed: Long = generateCharacterSeed(name),
+    val ageCategory: String = "Adolescent (16-18 ans)",
+    val personalityMood: String = "Déterminé & Calme",
+    val defaultExpression: String = "Regard intense",
+    val preferredArtStyle: String = "MANGA_SHONEN",
+    val secondaryReferenceImages: String = "", // Delimited by '||'
     val createdAt: Long = System.currentTimeMillis()
-)
+) {
+    fun getReferenceImagesList(): List<String> {
+        val list = mutableListOf<String>()
+        referenceImagePath?.let { if (it.isNotBlank()) list.add(it) }
+        if (secondaryReferenceImages.isNotBlank()) {
+            secondaryReferenceImages.split("||").map { it.trim() }.filter { it.isNotBlank() }.forEach {
+                if (!list.contains(it)) list.add(it)
+            }
+        }
+        return list
+    }
+}
 
 fun generateCharacterUid(name: String): String {
     val cleanName = name.filter { it.isLetter() }.take(4).uppercase().ifEmpty { "HERO" }

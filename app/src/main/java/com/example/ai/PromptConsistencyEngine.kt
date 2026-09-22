@@ -42,6 +42,15 @@ object PromptConsistencyEngine {
             promptBuilder.append("Hair: ${character.hairStyleColor}. ")
             promptBuilder.append("Eyes: ${character.eyeDescription}. ")
             promptBuilder.append("Attire: ${character.clothingDescription}. ")
+            if (character.ageCategory.isNotBlank()) {
+                promptBuilder.append("Age/Maturity: ${character.ageCategory}. ")
+            }
+            if (character.personalityMood.isNotBlank()) {
+                promptBuilder.append("Demeanor/Personality: ${character.personalityMood}. ")
+            }
+            if (character.defaultExpression.isNotBlank()) {
+                promptBuilder.append("Default Expression: ${character.defaultExpression}. ")
+            }
             if (character.distinctiveFeatures.isNotBlank()) {
                 promptBuilder.append("Key Features: ${character.distinctiveFeatures}. ")
             }
@@ -51,8 +60,9 @@ object PromptConsistencyEngine {
             if (character.firstAppearanceImagePath != null) {
                 promptBuilder.append("MANDATORY FIRST-APPEARANCE REPRODUCTION: Character UID #${character.visualUid} has an established canonical First Appearance reference. You must strictly preserve the identical facial structure, eye geometry, hair strands, and outfit proportions established in that first appearance anchor. ")
             }
-            if (hasReferenceImage) {
-                promptBuilder.append("CRITICAL: Maintain exact likeness, hair structure, face geometry, and outfit details from the provided character reference image. ")
+            val totalRefImages = character.getReferenceImagesList().size + (if (hasReferenceImage) 1 else 0)
+            if (totalRefImages > 0) {
+                promptBuilder.append("CRITICAL ($totalRefImages visual reference image(s) attached): Strictly maintain exact character likeness, face topology, hairstyle, silhouette, and costume details from the provided character reference images. ")
             }
         }
 

@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -46,7 +47,9 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Splitscreen
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -58,6 +61,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -248,6 +253,10 @@ fun StoryboardScreen(
     // Slot bounds registry (panelIndex -> Rect in root coordinates)
     val slotBounds = remember { mutableStateMapOf<Int, Rect>() }
 
+    // Dynamic panel split dialog state
+    var showSplitDialog by remember { mutableStateOf(false) }
+    var panelToSplit by remember { mutableStateOf<MangaPanel?>(null) }
+
     val currentLayout = GridPageLayout.values().firstOrNull { it.id == (selectedPage?.layoutType ?: "TWO_PANELS_VERTICAL") }
         ?: GridPageLayout.TWO_VERTICAL
 
@@ -265,12 +274,17 @@ fun StoryboardScreen(
             StoryboardTopBar(
                 pageNumber = selectedPage?.pageNumber ?: 1,
                 layout = currentLayout,
+                hasPanels = panels.isNotEmpty(),
                 onSelectLayout = { newLayout ->
                     viewModel.applyLayoutToCurrentPage(newLayout.id, newLayout.panelCount)
                 },
                 onNavigateBack = onNavigateBack,
                 onAddPanel = { viewModel.addPanelToCurrentPage() },
-                onAddPage = { viewModel.addNewPage() }
+                onAddPage = { viewModel.addNewPage() },
+                onSplitPanel = {
+                    panelToSplit = panels.firstOrNull()
+                    showSplitDialog = true
+                }
             )
 
             // Status notice or feedback
@@ -395,6 +409,10 @@ fun StoryboardScreen(
                     },
                     onGeneratePanel = { panelIndex ->
                         onGenerateFromStoryboard(panelIndex)
+                    },
+                    onSplitPanel = { panel ->
+                        panelToSplit = panel
+                        showSplitDialog = true
                     }
                 )
             }
@@ -473,6 +491,20 @@ fun StoryboardScreen(
                 position = dragGlobalPosition
             )
         }
+
+        // Sequential Sub-Panel Split Dialog
+        if (showSplitDialog && panels.isNotEmpty()) {
+            SplitPanelDialog(
+                panels = panels,
+                initialPanel = panelToSplit,
+                onDismiss = { showSplitDialog = false },
+                onConfirmSplit = { target, count, customPrompt ->
+                    val updatedTarget = if (customPrompt.isNotBlank()) target.copy(userPrompt = customPrompt) else target
+                    viewModel.splitPanelIntoSubPanels(updatedTarget, count)
+                    showSplitDialog = false
+                }
+            )
+        }
     }
 }
 
@@ -483,10 +515,12 @@ fun StoryboardScreen(
 fun StoryboardTopBar(
     pageNumber: Int,
     layout: GridPageLayout,
+    hasPanels: Boolean,
     onSelectLayout: (GridPageLayout) -> Unit,
     onNavigateBack: () -> Unit,
     onAddPanel: () -> Unit,
-    onAddPage: () -> Unit
+    onAddPage: () -> Unit,
+    onSplitPanel: () -> Unit
 ) {
     Surface(
         color = InkSurface,
@@ -545,6 +579,26 @@ fun StoryboardTopBar(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (hasPanels) {
+                        OutlinedButton(
+                            onClick = onSplitPanel,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = QiGold),
+                            border = BorderStroke(1.dp, QiGold.copy(alpha = 0.7f)),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier
+                                .height(32.dp)
+                                .testTag("topbar_split_panel_btn")
+                        ) {
+                            Icon(
+                                Icons.Default.Splitscreen,
+                                contentDescription = "Diviser la case en sous-cases",
+                                modifier = Modifier.size(12.dp),
+                                tint = QiGold
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("Diviser", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = QiGold)
+                        }
+                    }
                     OutlinedButton(
                         onClick = onAddPanel,
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = ManhuaCyan),
@@ -640,7 +694,8 @@ fun MangaPageGridSheet(
     onSlotGloballyPositioned: (Int, Rect) -> Unit,
     onSlotClicked: (MangaPanel) -> Unit,
     onClearPanel: (MangaPanel) -> Unit,
-    onGeneratePanel: (Int) -> Unit
+    onGeneratePanel: (Int) -> Unit,
+    onSplitPanel: (MangaPanel) -> Unit
 ) {
     // Authentic Manga Paper Sheet representation (ratio ~ 1 : 1.414 / B4 standard)
     Card(
@@ -718,6 +773,7 @@ fun MangaPageGridSheet(
                                 onClick = { onSlotClicked(panel) },
                                 onClear = { onClearPanel(panel) },
                                 onGenerate = { onGeneratePanel(0) },
+                                onSplit = { onSplitPanel(panel) },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -742,6 +798,7 @@ fun MangaPageGridSheet(
                                             onClick = { onSlotClicked(panel) },
                                             onClear = { onClearPanel(panel) },
                                             onGenerate = { onGeneratePanel(i) },
+                                            onSplit = { onSplitPanel(panel) },
                                             modifier = Modifier
                                                 .weight(1f)
                                                 .fillMaxWidth()
@@ -778,6 +835,7 @@ fun MangaPageGridSheet(
                                         onClick = { onSlotClicked(topPanel) },
                                         onClear = { onClearPanel(topPanel) },
                                         onGenerate = { onGeneratePanel(0) },
+                                        onSplit = { onSplitPanel(topPanel) },
                                         modifier = Modifier
                                             .weight(1.2f)
                                             .fillMaxWidth()
@@ -805,6 +863,7 @@ fun MangaPageGridSheet(
                                                 onClick = { onSlotClicked(subPanel) },
                                                 onClear = { onClearPanel(subPanel) },
                                                 onGenerate = { onGeneratePanel(i) },
+                                                onSplit = { onSplitPanel(subPanel) },
                                                 modifier = Modifier
                                                     .weight(1f)
                                                     .fillMaxHeight()
@@ -823,12 +882,15 @@ fun MangaPageGridSheet(
                         }
 
                         GridPageLayout.FOUR_YONKOMA -> {
-                            // 4 stacked panels vertically
+                            // Stacked panels vertically (with scrolling support if more than 4 panels)
+                            val totalSlots = maxOf(4, panels.size)
                             Column(
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .then(if (totalSlots > 4) Modifier.verticalScroll(rememberScrollState()) else Modifier),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                for (i in 0..3) {
+                                for (i in 0 until totalSlots) {
                                     val panel = panels.getOrNull(i)
                                     if (panel != null) {
                                         MangaGridSlot(
@@ -842,16 +904,13 @@ fun MangaPageGridSheet(
                                             onClick = { onSlotClicked(panel) },
                                             onClear = { onClearPanel(panel) },
                                             onGenerate = { onGeneratePanel(i) },
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .fillMaxWidth()
+                                            onSplit = { onSplitPanel(panel) },
+                                            modifier = if (totalSlots > 4) Modifier.height(140.dp).fillMaxWidth() else Modifier.weight(1f).fillMaxWidth()
                                         )
                                     } else {
                                         EmptyGridSlotPlaceholder(
                                             slotIndex = i,
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .fillMaxWidth()
+                                            modifier = if (totalSlots > 4) Modifier.height(140.dp).fillMaxWidth() else Modifier.weight(1f).fillMaxWidth()
                                         )
                                     }
                                 }
@@ -879,6 +938,7 @@ fun MangaGridSlot(
     onClick: () -> Unit,
     onClear: () -> Unit,
     onGenerate: () -> Unit,
+    onSplit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val borderColor = when {
@@ -1059,26 +1119,58 @@ fun MangaGridSlot(
                 }
             }
 
-            // Bottom action row: Quick trigger to generate AI panel
+            // Bottom action row: Quick trigger to generate AI panel or split wide panel
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (panel.imagePath != null) {
-                    IconButton(
-                        onClick = onClear,
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DeleteSweep,
-                            contentDescription = "Effacer l'image pour revoir le storyboard",
-                            tint = TextMuted,
-                            modifier = Modifier.size(16.dp)
-                        )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (panel.imagePath != null) {
+                        IconButton(
+                            onClick = onClear,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteSweep,
+                                contentDescription = "Effacer l'image pour revoir le storyboard",
+                                tint = TextMuted,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
-                } else {
-                    Spacer(modifier = Modifier.width(24.dp))
+
+                    // Button to split wide panel into sequential sub-panels
+                    Surface(
+                        color = InkSurfaceVariant.copy(alpha = 0.9f),
+                        shape = RoundedCornerShape(4.dp),
+                        border = BorderStroke(0.8.dp, QiGold.copy(alpha = 0.7f)),
+                        modifier = Modifier
+                            .clickable { onSplit() }
+                            .testTag("slot_split_btn_$slotIndex")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Splitscreen,
+                                contentDescription = "Diviser en sous-cases",
+                                tint = QiGold,
+                                modifier = Modifier.size(11.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "Diviser",
+                                color = QiGold,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
 
                 Surface(
@@ -1130,6 +1222,234 @@ fun EmptyGridSlotPlaceholder(slotIndex: Int, modifier: Modifier = Modifier) {
             fontSize = 10.sp
         )
     }
+}
+
+/**
+ * Dialog for automatically splitting a panel into dynamic sequential sub-panels.
+ * Allows choosing target panel, division count (2, 3, 4), and sequential narrative direction.
+ */
+@Composable
+fun SplitPanelDialog(
+    panels: List<MangaPanel>,
+    initialPanel: MangaPanel?,
+    onDismiss: () -> Unit,
+    onConfirmSplit: (target: MangaPanel, count: Int, customPrompt: String) -> Unit
+) {
+    var selectedPanel by remember(initialPanel) {
+        mutableStateOf(initialPanel ?: panels.firstOrNull())
+    }
+    var subCount by remember { mutableIntStateOf(2) }
+    var actionPrompt by remember(selectedPanel) {
+        mutableStateOf(selectedPanel?.userPrompt ?: "")
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = InkSurface,
+        titleContentColor = MangaPaperWhite,
+        textContentColor = TextSecondary,
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(QiGold.copy(alpha = 0.15f), CircleShape)
+                    .border(1.dp, QiGold.copy(alpha = 0.4f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Splitscreen,
+                    contentDescription = null,
+                    tint = QiGold,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        },
+        title = {
+            Text(
+                text = "Division Séquentielle de Case",
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                color = MangaPaperWhite
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Divisez automatiquement une case large en sous-cases dynamiques pour dynamiser le rythme de lecture et la narration séquentielle.",
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    lineHeight = 16.sp
+                )
+
+                // Panel selector if multiple panels exist
+                if (panels.size > 1) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Case cible à diviser :",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = ManhuaCyan
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            panels.forEach { p ->
+                                val isCurSelected = selectedPanel?.id == p.id
+                                FilterChip(
+                                    selected = isCurSelected,
+                                    onClick = {
+                                        selectedPanel = p
+                                        actionPrompt = p.userPrompt
+                                    },
+                                    label = {
+                                        Text(
+                                            text = "Case #${p.panelIndex + 1}",
+                                            fontSize = 11.sp
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = QiGold.copy(alpha = 0.2f),
+                                        selectedLabelColor = QiGold,
+                                        containerColor = InkMidnight,
+                                        labelColor = TextSecondary
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        borderColor = if (isCurSelected) QiGold else InkBorder,
+                                        enabled = true,
+                                        selected = isCurSelected
+                                    ),
+                                    modifier = Modifier.testTag("split_panel_chip_${p.panelIndex}")
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Number of sub-panels
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Nombre de sous-cases :",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = ManhuaCyan
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(2 to "2 sous-cases (Duo)", 3 to "3 sous-cases (Trio)", 4 to "4 sous-cases (Action)").forEach { (count, label) ->
+                            val isSel = subCount == count
+                            Surface(
+                                color = if (isSel) QiGold.copy(alpha = 0.18f) else InkMidnight,
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, if (isSel) QiGold else InkBorder),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { subCount = count }
+                                    .testTag("split_count_${count}_btn")
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "$count",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 16.sp,
+                                        color = if (isSel) QiGold else MangaPaperWhite
+                                    )
+                                    Text(
+                                        text = label.substringBefore(" ("),
+                                        fontSize = 9.sp,
+                                        color = if (isSel) QiGold else TextMuted
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Sequential Action Context prompt
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Description / Intention séquentielle (optionnel) :",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
+                    )
+                    OutlinedTextField(
+                        value = actionPrompt,
+                        onValueChange = { actionPrompt = it },
+                        placeholder = {
+                            Text(
+                                "ex: Coup d'œil rapide, puis choc en gros plan...",
+                                color = TextMuted,
+                                fontSize = 11.sp
+                            )
+                        },
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontSize = 12.sp,
+                            color = MangaPaperWhite
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = QiGold,
+                            unfocusedBorderColor = InkBorder,
+                            focusedContainerColor = InkMidnight,
+                            unfocusedContainerColor = InkMidnight,
+                            cursorColor = QiGold
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("split_prompt_input")
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val target = selectedPanel ?: panels.firstOrNull()
+                    if (target != null) {
+                        onConfirmSplit(target, subCount, actionPrompt)
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = QiGold),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.testTag("split_confirm_button")
+            ) {
+                Icon(
+                    Icons.Default.Splitscreen,
+                    contentDescription = null,
+                    tint = Color.Black,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Diviser en $subCount",
+                    color = Color.Black,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(6.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
+                border = BorderStroke(1.dp, InkBorder)
+            ) {
+                Text(text = "Annuler", fontSize = 12.sp)
+            }
+        }
+    )
 }
 
 /**

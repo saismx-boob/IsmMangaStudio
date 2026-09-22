@@ -309,8 +309,10 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
             character?.firstAppearanceImagePath?.let {
                 if (java.io.File(it).exists()) refImages.add(it)
             }
-            character?.referenceImagePath?.let {
-                if (java.io.File(it).exists() && it != character.firstAppearanceImagePath) refImages.add(it)
+            character?.getReferenceImagesList()?.forEach { path ->
+                if (java.io.File(path).exists() && !refImages.contains(path)) {
+                    refImages.add(path)
+                }
             }
             state.referenceImagePath?.let {
                 if (java.io.File(it).exists() && !refImages.contains(it)) refImages.add(it)
@@ -562,6 +564,192 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
                 _editorState.value = _editorState.value.copy(selectedCharacterId = null)
             }
         }
+    }
+
+    /**
+     * Utilitaire qui concatène automatiquement le nom, la description physique, les traits et
+     * les tags de style d'un personnage sélectionné en un prompt structuré pour l'API Gemini.
+     */
+    fun buildStructuredCharacterPrompt(
+        character: CharacterProfile,
+        userAction: String = "",
+        artStyleOverride: MangaArtStyle? = null,
+        includeConsistencyDirectives: Boolean = true
+    ): String {
+        val sb = StringBuilder()
+
+        // 1. Identité et Nom
+        sb.append("Character Name: ${character.name.trim()}")
+        if (character.role.isNotBlank()) {
+            sb.append(" (${character.role.trim()})")
+        }
+        sb.append(".\n")
+
+        // 2. ADN Visuel et Identifiants
+        sb.append("Visual UID: #${character.visualUid}. Seed: ${character.canonicalSeed}.\n")
+
+        // 3. Description Physique Complète
+        val physicalDescriptions = mutableListOf<String>()
+        if (character.ageCategory.isNotBlank()) physicalDescriptions.add("Age Category: ${character.ageCategory}")
+        if (character.personalityMood.isNotBlank()) physicalDescriptions.add("Personality/Mood: ${character.personalityMood}")
+        if (character.defaultExpression.isNotBlank()) physicalDescriptions.add("Default Facial Expression: ${character.defaultExpression}")
+        if (character.hairStyleColor.isNotBlank()) physicalDescriptions.add("Hair: ${character.hairStyleColor}")
+        if (character.eyeDescription.isNotBlank()) physicalDescriptions.add("Eyes: ${character.eyeDescription}")
+        if (character.clothingDescription.isNotBlank()) physicalDescriptions.add("Attire/Costume: ${character.clothingDescription}")
+        if (character.distinctiveFeatures.isNotBlank()) physicalDescriptions.add("Distinctive Features: ${character.distinctiveFeatures}")
+        if (character.signatureColor.isNotBlank()) physicalDescriptions.add("Signature Palette Accent: ${character.signatureColor}")
+
+        if (physicalDescriptions.isNotEmpty()) {
+            sb.append("Physical Description: ").append(physicalDescriptions.joinToString("; ")).append(".\n")
+        }
+
+        // 4. Tags de Style Artistique Associé
+        val artStyle = artStyleOverride ?: MangaArtStyle.fromId(character.preferredArtStyle)
+        val styleTagKeywords = when (character.preferredArtStyle) {
+            "MANGA_SHONEN" -> "Classic Shonen Manga style, high contrast black & white dynamic ink, speedlines, screentone shading, bold expressive lineart"
+            "MANHUA_QI" -> "Chinese Xianxia Manhua style, ethereal flowing qi energy, intricate silk details, radiant mystical aura, fine lineart"
+            "SEINEN_DARK" -> "Dark Seinen Manga style, gritty realistic proportions, heavy crosshatching, atmospheric deep shadows, mature ink aesthetic"
+            "CYBER_COMIC" -> "Cyber Western Comic style, bold graphical silhouettes, tech neon highlights, dynamic framing, pop-ink textures"
+            "SHOJO_ETHEREAL" -> "Shojo Manga style, delicate fine lines, sparkling ethereal light accents, soft emotional eyes, decorative tones"
+            else -> artStyle.promptKeywords
+        }
+        sb.append("Style Tags: [${character.preferredArtStyle}] $styleTagKeywords.\n")
+
+        // 5. Ancre Visuelle Complémentaire si définie
+        if (character.promptAnchor.isNotBlank()) {
+            sb.append("Visual Anchor Snapshot: ${character.promptAnchor.trim()}.\n")
+        }
+
+        // 6. Action / Scène de l'utilisateur (si fournie)
+        if (userAction.isNotBlank()) {
+            sb.append("Action & Pose: ${userAction.trim()}.\n")
+        }
+
+        // 7. Directives strictes de fidélité et cohérence pour Gemini
+        if (includeConsistencyDirectives) {
+            sb.append("Gemini Consistency Directive: Maintain strict facial likeness, identical hair topology, signature silhouette, and costume integrity across all panels matching UID #${character.visualUid}.")
+        }
+
+        return sb.toString().trim()
+    }
+
+    /**
+     * Surcharge pratique pour générer le prompt structuré du personnage actuellement sélectionné
+     * dans l'éditeur de studio.
+     */
+    suspend fun getSelectedCharacterStructuredPrompt(userAction: String = ""): String? {
+        val selectedId = _editorState.value.selectedCharacterId ?: return null
+        val character = repository.getCharacterById(selectedId) ?: return null
+        return buildStructuredCharacterPrompt(
+            character = character,
+            userAction = userAction,
+            artStyleOverride = _editorState.value.selectedArtStyle
+        )
+    }
+
+    /**
+     * Helper function that combines a selected character profile with user-provided environment
+     * descriptions (or selected BackgroundProfile) and optional action/camera/style settings to generate
+     * a fully coherent scene generation prompt for Gemini.
+     */
+    fun buildCoherentScenePrompt(
+        character: CharacterProfile?,
+        environmentDescription: String,
+        userAction: String = "",
+        artStyle: MangaArtStyle = _editorState.value.selectedArtStyle,
+        colorMode: ColorRenderingMode = _editorState.value.selectedColorMode,
+        lineStyle: LineWeightStyle = _editorState.value.selectedLineStyle,
+        camera: CameraPerspective = _editorState.value.selectedCamera,
+        backgroundProfile: BackgroundProfile? = null
+    ): String {
+        val sb = StringBuilder()
+
+        // 1. Scene Overview & Dramatic Context
+        sb.append("Manga panel illustration: ")
+        val actionPart = userAction.trim().ifEmpty { "Dynamic manga scene" }
+        sb.append(actionPart)
+        sb.append(", perspective: ${camera.promptModifier}.\n")
+
+        // 2. Character DNA and Physical Consistency Anchor
+        if (character != null) {
+            val charStructured = buildStructuredCharacterPrompt(
+                character = character,
+                userAction = "",
+                artStyleOverride = artStyle,
+                includeConsistencyDirectives = true
+            )
+            sb.append("\n[CHARACTER CONSISTENCY ANCHOR]:\n")
+            sb.append(charStructured).append("\n")
+        }
+
+        // 3. User-Provided Environment Description & Background Profile Anchor
+        sb.append("\n[ENVIRONMENT & SCENERY DETAILS]:\n")
+        val cleanEnv = environmentDescription.trim()
+        if (cleanEnv.isNotBlank()) {
+            sb.append("Setting Description: ").append(cleanEnv).append(".\n")
+        }
+        if (backgroundProfile != null) {
+            sb.append("Canonical Location Anchor: ${backgroundProfile.name} (${backgroundProfile.category}). ")
+            sb.append("Atmosphere & Lighting: ${backgroundProfile.lightingMood}. ")
+            sb.append("Architecture/Landscape: ${backgroundProfile.architectureDetails}. ")
+            if (backgroundProfile.promptAnchor.isNotBlank()) {
+                sb.append("Background Visual Reference Anchor: ${backgroundProfile.promptAnchor}. ")
+            }
+            sb.append("\n")
+        }
+
+        // 4. Interaction between Character and Environment
+        if (character != null && cleanEnv.isNotBlank()) {
+            sb.append("Integration Directive: Seamlessly place ${character.name} into the specified environment ($cleanEnv). Match environmental lighting, cast shadows, perspective horizon lines, and atmospheric depth accurately.\n")
+        }
+
+        // 5. Artistic Rendering Style & Technical Inking Specifications
+        sb.append("\n[ARTISTIC STYLE & RENDERING SPECIFICATIONS]:\n")
+        sb.append("Art Style: ").append(artStyle.promptKeywords).append(".\n")
+        sb.append("Tonal Mode: ").append(colorMode.promptModifier).append(".\n")
+        sb.append("Line Art: ").append(lineStyle.promptModifier).append(".\n")
+        sb.append("Stroke & Contrast: ")
+            .append(com.example.ai.MangaStyleSettingsHelper.getStrokePrompt(_editorState.value.lineThickness))
+            .append(", ")
+            .append(com.example.ai.MangaStyleSettingsHelper.getContrastPrompt(_editorState.value.contrastLevel))
+            .append(".\n")
+
+        // 6. Gemini Quality & Coherence Mandate
+        sb.append("\n[GEMINI IMAGE QUALITY MANDATE]: Professional publication-grade manga quality, crisp linework, intentional screentones, harmonious composition, zero text artifacts inside the artwork.")
+
+        return sb.toString().trim()
+    }
+
+    /**
+     * Suspend helper that combines the currently selected character and current background / environment
+     * from the studio editor state into a coherent Gemini scene prompt.
+     */
+    suspend fun generateCoherentScenePromptForCurrentSelection(
+        environmentOverride: String? = null,
+        userActionOverride: String? = null
+    ): String {
+        val charId = _editorState.value.selectedCharacterId
+        val character = charId?.let { repository.getCharacterById(it) }
+
+        val bgId = _editorState.value.selectedBackgroundId
+        val backgroundProfile = bgId?.let { repository.getBackgroundById(it) }
+
+        val environmentDesc = environmentOverride?.ifBlank { null }
+            ?: backgroundProfile?.let { "${it.name}, ${it.architectureDetails}, éclairage ${it.lightingMood}" }
+            ?: "Environnement manga détaillé avec perspective soignée"
+
+        val actionDesc = userActionOverride ?: _editorState.value.activePrompt
+
+        return buildCoherentScenePrompt(
+            character = character,
+            environmentDescription = environmentDesc,
+            userAction = actionDesc,
+            artStyle = _editorState.value.selectedArtStyle,
+            colorMode = _editorState.value.selectedColorMode,
+            lineStyle = _editorState.value.selectedLineStyle,
+            camera = _editorState.value.selectedCamera,
+            backgroundProfile = backgroundProfile
+        )
     }
 
     // Background Vault methods

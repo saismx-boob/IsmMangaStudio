@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -50,6 +51,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -612,6 +614,135 @@ fun StudioScreen(
                                 )
                             }
                         }
+                    }
+
+                    // Environment description input & Gemini prompt helper
+                    var environmentInput by remember { mutableStateOf("") }
+                    var showCoherentPromptPreview by remember { mutableStateOf(false) }
+
+                    OutlinedTextField(
+                        value = environmentInput,
+                        onValueChange = { environmentInput = it },
+                        placeholder = {
+                            Text(
+                                text = if (activeBackground != null) "Décor actif: ${activeBackground.name} (ajoutez des précisions d'environnement...)" else "Description de l'environnement (ex: Forêt brumeuse avec ruines anciennes sous la pluie...)",
+                                color = TextSecondary,
+                                fontSize = 12.sp
+                            )
+                        },
+                        label = { Text("Environnement & Décor de la Scène", color = ManhuaCyan, fontSize = 12.sp) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = ManhuaCyan,
+                            unfocusedBorderColor = InkBorder,
+                            focusedTextColor = MangaPaperWhite,
+                            unfocusedTextColor = MangaPaperWhite,
+                            cursorColor = ManhuaCyan
+                        ),
+                        minLines = 2,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("scene_environment_input_field")
+                    )
+
+                    // Helper button: Inspect Coherent Scene Prompt for Gemini
+                    OutlinedButton(
+                        onClick = { showCoherentPromptPreview = true },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = QiGold),
+                        border = BorderStroke(1.dp, QiGold.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("preview_coherent_scene_prompt_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = QiGold,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Aperçu Prompt Scène Cohérente Gemini (Personnage + Décor)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    if (showCoherentPromptPreview) {
+                        val coherentPrompt = remember(activeCharacter, environmentInput, editorState.activePrompt, editorState.selectedArtStyle, activeBackground) {
+                            val envText = environmentInput.ifBlank {
+                                activeBackground?.let { "${it.name}, ${it.architectureDetails}, ambiance ${it.lightingMood}" } ?: "Environnement manga détaillé"
+                            }
+                            viewModel.buildCoherentScenePrompt(
+                                character = activeCharacter,
+                                environmentDescription = envText,
+                                userAction = editorState.activePrompt,
+                                artStyle = editorState.selectedArtStyle,
+                                colorMode = editorState.selectedColorMode,
+                                lineStyle = editorState.selectedLineStyle,
+                                camera = editorState.selectedCamera,
+                                backgroundProfile = activeBackground
+                            )
+                        }
+                        val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+
+                        AlertDialog(
+                            onDismissRequest = { showCoherentPromptPreview = false },
+                            title = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = QiGold)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Prompt Scène Cohérente Gemini", color = MangaPaperWhite, fontSize = 16.sp)
+                                }
+                            },
+                            text = {
+                                Column {
+                                    Text(
+                                        text = "Combinaison structurée du personnage sélectionné, de l'environnement fourni et des paramètres stylistiques pour l'API Gemini :",
+                                        color = TextSecondary,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.padding(bottom = 8.dp)
+                                    )
+                                    Surface(
+                                        color = InkMidnight,
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.dp, InkBorder),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(230.dp)
+                                    ) {
+                                        LazyColumn(modifier = Modifier.padding(10.dp)) {
+                                            item {
+                                                Text(
+                                                    text = coherentPrompt,
+                                                    color = QiGold,
+                                                    fontSize = 11.sp,
+                                                    lineHeight = 16.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(coherentPrompt))
+                                        showCoherentPromptPreview = false
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MangaCrimson)
+                                ) {
+                                    Text("Copier le Prompt", color = Color.White)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showCoherentPromptPreview = false }) {
+                                    Text("Fermer", color = TextSecondary)
+                                }
+                            },
+                            containerColor = InkSurface,
+                            shape = RoundedCornerShape(12.dp)
+                        )
                     }
 
                     // Generate Button

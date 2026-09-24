@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,9 +28,12 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -76,6 +81,11 @@ import com.example.ui.theme.QiGold
 import com.example.ui.theme.TextSecondary
 import java.io.File
 
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import com.example.ui.components.MangaProjectGallery
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReaderGalleryScreen(
     viewModel: MangaStudioViewModel,
@@ -87,8 +97,10 @@ fun ReaderGalleryScreen(
     val selectedProject by viewModel.selectedProject.collectAsState()
     val pages by viewModel.currentPages.collectAsState()
     val panels by viewModel.currentPanels.collectAsState()
+    val projectCharacters by viewModel.projectCharacters.collectAsState()
 
     var showNewProjectDialog by remember { mutableStateOf(false) }
+    var currentViewMode by remember { mutableStateOf("GALLERY") } // "GALLERY" or "READER"
 
     Scaffold(
         floatingActionButton = {
@@ -152,109 +164,160 @@ fun ReaderGalleryScreen(
                         Icon(Icons.Default.Share, contentDescription = "Partager", tint = MangaCrimson)
                     }
                 }
-            }
 
-            // Projects selector carousel / row
-            item {
-                Text(
-                    text = "MES PROJETS",
-                    color = TextSecondary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    projects.forEach { project ->
-                        val isSelected = project.id == selectedProject?.id
-                        Surface(
-                            color = if (isSelected) MangaCrimson.copy(alpha = 0.15f) else InkSurface,
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, if (isSelected) MangaCrimson else InkBorder),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { viewModel.selectProject(project) }
-                                .testTag("project_item_${project.id}")
+                // Mode Selector Bar: Galerie des Projets vs Lecteur Webtoon
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(InkSurface)
+                        .border(1.dp, InkBorder, RoundedCornerShape(8.dp))
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Surface(
+                        color = if (currentViewMode == "GALLERY") MangaCrimson else Color.Transparent,
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { currentViewMode = "GALLERY" }
+                            .testTag("tab_gallery_mode")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(if (isSelected) MangaCrimson else InkSurfaceVariant),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Book,
-                                        contentDescription = null,
-                                        tint = if (isSelected) Color.White else MangaCrimson,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
+                            Icon(
+                                imageVector = Icons.Default.Collections,
+                                contentDescription = null,
+                                tint = if (currentViewMode == "GALLERY") Color.White else TextSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Galerie Projets (${projects.size})",
+                                color = if (currentViewMode == "GALLERY") Color.White else TextSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
 
-                                Spacer(modifier = Modifier.width(12.dp))
-
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = project.title,
-                                        color = MangaPaperWhite,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp
-                                    )
-                                    Text(
-                                        text = "${MangaArtStyle.fromId(project.artStyle).displayName} • ${project.synopsis.take(50)}...",
-                                        color = TextSecondary,
-                                        fontSize = 12.sp,
-                                        maxLines = 1
-                                    )
-                                }
-
-                                if (isSelected) {
-                                    Surface(
-                                        color = MangaCrimson,
-                                        shape = RoundedCornerShape(4.dp)
-                                    ) {
-                                        Text(
-                                            text = "EN LECTURE",
-                                            color = Color.White,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Black,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                            }
+                    Surface(
+                        color = if (currentViewMode == "READER") MangaCrimson else Color.Transparent,
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { currentViewMode = "READER" }
+                            .testTag("tab_reader_mode")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                                contentDescription = null,
+                                tint = if (currentViewMode == "READER") Color.White else TextSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Lecture Webtoon",
+                                color = if (currentViewMode == "READER") Color.White else TextSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
             }
 
-            // Reader Display: Sequential Webtoon / Manga Page Flow
-            item {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "PLANCHE EN COURS (DÉFILEMENT WEBTOON)",
-                        color = ManhuaCyan,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
+            // Display Project Gallery
+            if (currentViewMode == "GALLERY") {
+                item {
+                    MangaProjectGallery(
+                        viewModel = viewModel,
+                        projects = projects,
+                        selectedProject = selectedProject,
+                        onSelectProject = { project ->
+                            viewModel.selectProject(project)
+                        },
+                        onOpenProjectInStudio = { project ->
+                            viewModel.selectProject(project)
+                            onNavigateBackToStudio()
+                        },
+                        onOpenProjectInReader = { project ->
+                            viewModel.selectProject(project)
+                            currentViewMode = "READER"
+                        },
+                        onCreateNewProject = { showNewProjectDialog = true },
+                        onDeleteProject = { project ->
+                            viewModel.deleteProject(project)
+                        }
                     )
-                    Spacer(modifier = Modifier.weight(1f))
-                    TextButton(onClick = onNavigateBackToStudio) {
-                        Text("Modifier dans le Studio", color = MangaCrimson, fontSize = 12.sp)
-                    }
                 }
             }
 
-            // Continuous Webtoon / Manga flow of panels
-            items(panels) { panel ->
+            // Reader Display: Sequential Webtoon / Manga Page Flow
+            if (currentViewMode == "READER") {
+                item {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "PLANCHE EN COURS (DÉFILEMENT WEBTOON)",
+                            color = ManhuaCyan,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        TextButton(onClick = onNavigateBackToStudio) {
+                            Text("Modifier dans le Studio", color = MangaCrimson, fontSize = 12.sp)
+                        }
+                    }
+                }
+
+                if (panels.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(InkSurface)
+                                .border(1.dp, InkBorder, RoundedCornerShape(8.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Aucune case générée pour ce projet.",
+                                    color = TextSecondary,
+                                    fontSize = 13.sp
+                                )
+                                OutlinedButton(
+                                    onClick = onNavigateBackToStudio,
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MangaCrimson),
+                                    border = BorderStroke(1.dp, MangaCrimson)
+                                ) {
+                                    Text("Créer des cases dans le Studio")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Continuous Webtoon / Manga flow of panels
+                items(panels) { panel ->
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -299,6 +362,7 @@ fun ReaderGalleryScreen(
                         }
                     }
                 }
+            }
             }
 
             item {

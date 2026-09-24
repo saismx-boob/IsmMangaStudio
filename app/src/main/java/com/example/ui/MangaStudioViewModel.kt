@@ -19,10 +19,12 @@ import com.example.data.model.MangaPanel
 import com.example.data.model.MangaProject
 import com.example.data.repository.MangaRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -80,6 +82,15 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
     private val _currentPanels = MutableStateFlow<List<MangaPanel>>(emptyList())
     val currentPanels: StateFlow<List<MangaPanel>> = _currentPanels.asStateFlow()
 
+    private val _projectCharacters = MutableStateFlow<List<CharacterProfile>>(emptyList())
+    val projectCharacters: StateFlow<List<CharacterProfile>> = _projectCharacters.asStateFlow()
+
+    private val _allProjectPanels = MutableStateFlow<List<MangaPanel>>(emptyList())
+    val allProjectPanels: StateFlow<List<MangaPanel>> = _allProjectPanels.asStateFlow()
+
+    private var projectCharactersJob: Job? = null
+    private var projectPanelsJob: Job? = null
+
     private val _editorState = MutableStateFlow(StudioEditorState())
     val editorState: StateFlow<StudioEditorState> = _editorState.asStateFlow()
 
@@ -101,6 +112,29 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
             selectedColorMode = ColorRenderingMode.fromId(project.colorMode),
             selectedLineStyle = LineWeightStyle.fromId(project.lineStyle)
         )
+        // Dynamically fetch and observe characters used in this project's pages & panels
+        projectCharactersJob?.cancel()
+        projectCharactersJob = viewModelScope.launch {
+            repository.getPagesForProject(project.id).collect { pages ->
+                val charIds = mutableSetOf<Long>()
+                for (page in pages) {
+                    val panels = repository.getPanelsForPage(page.id).firstOrNull() ?: emptyList()
+                    for (panel in panels) {
+                        panel.characterId?.let { charIds.add(it) }
+                    }
+                }
+                val chars = charIds.mapNotNull { repository.getCharacterById(it) }
+                _projectCharacters.value = chars
+            }
+        }
+
+        projectPanelsJob?.cancel()
+        projectPanelsJob = viewModelScope.launch {
+            repository.getPanelsForProject(project.id).collect { allPanels ->
+                _allProjectPanels.value = allPanels
+            }
+        }
+
         viewModelScope.launch {
             repository.getPagesForProject(project.id).collect { pages ->
                 _currentPages.value = pages
@@ -512,6 +546,20 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
     fun deleteProject(project: MangaProject) {
         viewModelScope.launch {
             repository.deleteProject(project)
+        }
+    }
+
+    suspend fun getPagesWithPanelsForProject(projectId: Long): List<Pair<MangaPage, List<MangaPanel>>> {
+        val pages = repository.getPagesForProject(projectId).firstOrNull() ?: emptyList()
+        return pages.map { page ->
+            val panels = repository.getPanelsForPage(page.id).firstOrNull() ?: emptyList()
+            page to panels
+        }
+    }
+
+    fun setProjectCoverImage(project: MangaProject, imagePath: String) {
+        viewModelScope.launch {
+            repository.saveProject(project.copy(coverImagePath = imagePath))
         }
     }
 

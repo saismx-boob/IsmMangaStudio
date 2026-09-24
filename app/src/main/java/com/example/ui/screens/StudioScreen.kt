@@ -84,6 +84,7 @@ import com.example.ui.components.DialogueBubbleEditorDialog
 import com.example.ui.components.ExportPanelDialog
 import com.example.ui.components.MangaArtAndInkControlSection
 import com.example.ui.components.MangaPanelCanvas
+import com.example.ui.components.PromptBuilderCard
 import com.example.ui.components.RealTimePageCompositionPreview
 import com.example.util.MangaPanelExporter
 import android.graphics.Bitmap
@@ -411,6 +412,42 @@ fun StudioScreen(
                         )
                         exportPreviewBitmap = bmp
                     }
+                }
+            )
+        }
+
+        // Prompt Builder Component (Art styles, character traits, scene settings)
+        item {
+            PromptBuilderCard(
+                currentPrompt = editorState.activePrompt,
+                selectedArtStyle = editorState.selectedArtStyle,
+                characters = characters,
+                backgrounds = backgrounds,
+                selectedCharacterId = activeCharacter?.id,
+                selectedBackgroundId = activeBackground?.id,
+                selectedCamera = editorState.selectedCamera,
+                selectedColorMode = editorState.selectedColorMode,
+                selectedLineStyle = editorState.selectedLineStyle,
+                onPromptConstructed = { constructedPrompt ->
+                    viewModel.updatePrompt(constructedPrompt)
+                },
+                onArtStyleSelected = { style ->
+                    viewModel.selectPresetArtStyle(style, false)
+                },
+                onCharacterSelected = { charId ->
+                    viewModel.selectCharacter(charId)
+                },
+                onBackgroundSelected = { bgId ->
+                    viewModel.selectBackground(bgId)
+                },
+                onCameraSelected = { cam ->
+                    viewModel.updateCamera(cam)
+                },
+                onColorModeSelected = { colorMode ->
+                    viewModel.updateColorMode(colorMode)
+                },
+                onLineStyleSelected = { lineStyle ->
+                    viewModel.updateLineStyle(lineStyle)
                 }
             )
         }

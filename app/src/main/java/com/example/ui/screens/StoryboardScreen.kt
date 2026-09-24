@@ -48,7 +48,12 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Splitscreen
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.ViewAgenda
+import androidx.compose.material.icons.filled.ViewCompact
+import androidx.compose.material.icons.filled.ViewDay
+import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -110,6 +115,8 @@ import com.example.data.model.GridPageLayout
 import com.example.data.model.MangaPage
 import com.example.data.model.MangaPanel
 import com.example.ui.MangaStudioViewModel
+import com.example.ui.components.MangaPageSequencerView
+import com.example.ui.components.PageSequencerGridMode
 import com.example.ui.theme.InkBorder
 import com.example.ui.theme.InkMidnight
 import com.example.ui.theme.InkSurface
@@ -257,6 +264,9 @@ fun StoryboardScreen(
     var showSplitDialog by remember { mutableStateOf(false) }
     var panelToSplit by remember { mutableStateOf<MangaPanel?>(null) }
 
+    // Workspace mode: 0: Sequencer (Drag-and-drop & Grid Layouts), 1: Canvas (Authentic Manga Paper)
+    var workspaceViewMode by remember { mutableIntStateOf(0) }
+
     val currentLayout = GridPageLayout.values().firstOrNull { it.id == (selectedPage?.layoutType ?: "TWO_PANELS_VERTICAL") }
         ?: GridPageLayout.TWO_VERTICAL
 
@@ -275,6 +285,8 @@ fun StoryboardScreen(
                 pageNumber = selectedPage?.pageNumber ?: 1,
                 layout = currentLayout,
                 hasPanels = panels.isNotEmpty(),
+                viewMode = workspaceViewMode,
+                onViewModeChange = { workspaceViewMode = it },
                 onSelectLayout = { newLayout ->
                     viewModel.applyLayoutToCurrentPage(newLayout.id, newLayout.panelCount)
                 },
@@ -355,66 +367,126 @@ fun StoryboardScreen(
                 }
             }
 
-            // Blank Page Grid (Main Workspace)
+            // Main Workspace: MangaPageSequencerView (Drag-and-Drop & Sequence Reorder) or MangaPageGridSheet (Planche Manga)
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 6.dp)
             ) {
-                MangaPageGridSheet(
-                    layout = currentLayout,
-                    panels = panels,
-                    characters = characters,
-                    backgrounds = backgrounds,
-                    activeHoverIndex = activeHoverSlotIndex,
-                    selectedPaletteAsset = selectedPaletteAsset,
-                    onSlotGloballyPositioned = { index, rect ->
-                        slotBounds[index] = rect
-                    },
-                    onSlotClicked = { slotPanel ->
-                        val asset = selectedPaletteAsset
-                        if (asset != null) {
-                            when (asset) {
-                                is StoryboardAsset.CharacterAsset -> {
-                                    viewModel.applyCharacterAndPoseToPanel(
-                                        panel = slotPanel,
-                                        character = asset.character,
-                                        poseAction = null
-                                    )
+                if (workspaceViewMode == 0) {
+                    // Modern Drag-and-Drop Sequencer View
+                    MangaPageSequencerView(
+                        page = selectedPage,
+                        panels = panels,
+                        characters = characters,
+                        backgrounds = backgrounds,
+                        onReorderPanels = { reorderedList ->
+                            viewModel.reorderPanels(reorderedList)
+                        },
+                        onSelectPanel = { panel, index ->
+                            val asset = selectedPaletteAsset
+                            if (asset != null) {
+                                when (asset) {
+                                    is StoryboardAsset.CharacterAsset -> {
+                                        viewModel.applyCharacterAndPoseToPanel(
+                                            panel = panel,
+                                            character = asset.character,
+                                            poseAction = null
+                                        )
+                                    }
+                                    is StoryboardAsset.PoseAsset -> {
+                                        val currentChar = characters.firstOrNull { it.id == panel.characterId }
+                                        viewModel.applyCharacterAndPoseToPanel(
+                                            panel = panel,
+                                            character = currentChar,
+                                            poseAction = asset.pose.actionPrompt,
+                                            camera = asset.pose.camera
+                                        )
+                                    }
+                                    is StoryboardAsset.BackgroundAsset -> {
+                                        viewModel.applyCharacterAndPoseToPanel(
+                                            panel = panel,
+                                            character = characters.firstOrNull { it.id == panel.characterId },
+                                            poseAction = null,
+                                            background = asset.background
+                                        )
+                                    }
                                 }
-                                is StoryboardAsset.PoseAsset -> {
-                                    val currentChar = characters.firstOrNull { it.id == slotPanel.characterId }
-                                    viewModel.applyCharacterAndPoseToPanel(
-                                        panel = slotPanel,
-                                        character = currentChar,
-                                        poseAction = asset.pose.actionPrompt,
-                                        camera = asset.pose.camera
-                                    )
-                                }
-                                is StoryboardAsset.BackgroundAsset -> {
-                                    viewModel.applyCharacterAndPoseToPanel(
-                                        panel = slotPanel,
-                                        character = characters.firstOrNull { it.id == slotPanel.characterId },
-                                        poseAction = null,
-                                        background = asset.background
-                                    )
-                                }
+                                selectedPaletteAsset = null
                             }
-                            selectedPaletteAsset = null
+                        },
+                        onGeneratePanel = { panelIndex ->
+                            onGenerateFromStoryboard(panelIndex)
+                        },
+                        onAddPanel = {
+                            viewModel.addPanelToCurrentPage()
+                        },
+                        onSplitPanel = { panel ->
+                            panelToSplit = panel
+                            showSplitDialog = true
+                        },
+                        onDeletePanel = { panel ->
+                            viewModel.clearPanelImage(panel)
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    // Manga Page Grid Sheet (Planche layout with Margins)
+                    MangaPageGridSheet(
+                        layout = currentLayout,
+                        panels = panels,
+                        characters = characters,
+                        backgrounds = backgrounds,
+                        activeHoverIndex = activeHoverSlotIndex,
+                        selectedPaletteAsset = selectedPaletteAsset,
+                        onSlotGloballyPositioned = { index, rect ->
+                            slotBounds[index] = rect
+                        },
+                        onSlotClicked = { slotPanel ->
+                            val asset = selectedPaletteAsset
+                            if (asset != null) {
+                                when (asset) {
+                                    is StoryboardAsset.CharacterAsset -> {
+                                        viewModel.applyCharacterAndPoseToPanel(
+                                            panel = slotPanel,
+                                            character = asset.character,
+                                            poseAction = null
+                                        )
+                                    }
+                                    is StoryboardAsset.PoseAsset -> {
+                                        val currentChar = characters.firstOrNull { it.id == slotPanel.characterId }
+                                        viewModel.applyCharacterAndPoseToPanel(
+                                            panel = slotPanel,
+                                            character = currentChar,
+                                            poseAction = asset.pose.actionPrompt,
+                                            camera = asset.pose.camera
+                                        )
+                                    }
+                                    is StoryboardAsset.BackgroundAsset -> {
+                                        viewModel.applyCharacterAndPoseToPanel(
+                                            panel = slotPanel,
+                                            character = characters.firstOrNull { it.id == slotPanel.characterId },
+                                            poseAction = null,
+                                            background = asset.background
+                                        )
+                                    }
+                                }
+                                selectedPaletteAsset = null
+                            }
+                        },
+                        onClearPanel = { panel ->
+                            viewModel.clearPanelImage(panel)
+                        },
+                        onGeneratePanel = { panelIndex ->
+                            onGenerateFromStoryboard(panelIndex)
+                        },
+                        onSplitPanel = { panel ->
+                            panelToSplit = panel
+                            showSplitDialog = true
                         }
-                    },
-                    onClearPanel = { panel ->
-                        viewModel.clearPanelImage(panel)
-                    },
-                    onGeneratePanel = { panelIndex ->
-                        onGenerateFromStoryboard(panelIndex)
-                    },
-                    onSplitPanel = { panel ->
-                        panelToSplit = panel
-                        showSplitDialog = true
-                    }
-                )
+                    )
+                }
             }
 
             // Bottom Palette Drawer: Characters & Dynamic Reference Poses
@@ -516,6 +588,8 @@ fun StoryboardTopBar(
     pageNumber: Int,
     layout: GridPageLayout,
     hasPanels: Boolean,
+    viewMode: Int,
+    onViewModeChange: (Int) -> Unit,
     onSelectLayout: (GridPageLayout) -> Unit,
     onNavigateBack: () -> Unit,
     onAddPanel: () -> Unit,
@@ -571,14 +645,58 @@ fun StoryboardTopBar(
                             )
                         }
                         Text(
-                            text = "Grille de mise en page vierge & composition",
+                            text = if (viewMode == 0) "Séquenceur réorganisable & grille" else "Grille de mise en page vierge & composition",
                             color = TextSecondary,
                             fontSize = 11.sp
                         )
                     }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // View Mode Switcher
+                    Surface(
+                        color = InkMidnight,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, InkBorder)
+                    ) {
+                        Row(modifier = Modifier.padding(2.dp)) {
+                            IconButton(
+                                onClick = { onViewModeChange(0) },
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .background(
+                                        if (viewMode == 0) ManhuaCyan.copy(alpha = 0.25f) else Color.Transparent,
+                                        RoundedCornerShape(4.dp)
+                                    )
+                                    .testTag("mode_sequencer_btn")
+                            ) {
+                                Icon(
+                                    Icons.Default.GridView,
+                                    contentDescription = "Mode Séquenceur",
+                                    tint = if (viewMode == 0) ManhuaCyan else TextMuted,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onViewModeChange(1) },
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .background(
+                                        if (viewMode == 1) ManhuaCyan.copy(alpha = 0.25f) else Color.Transparent,
+                                        RoundedCornerShape(4.dp)
+                                    )
+                                    .testTag("mode_canvas_btn")
+                            ) {
+                                Icon(
+                                    Icons.Default.TouchApp,
+                                    contentDescription = "Mode Planche",
+                                    tint = if (viewMode == 1) ManhuaCyan else TextMuted,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+
                     if (hasPanels) {
                         OutlinedButton(
                             onClick = onSplitPanel,

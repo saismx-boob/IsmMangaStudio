@@ -954,4 +954,20 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
             )
         }
     }
+
+    /**
+     * Reorders the panels for the current page and persists new indices to Room database.
+     * Supports interactive drag-and-drop panel sequencing in the grid layout.
+     */
+    fun reorderPanels(reorderedPanels: List<MangaPanel>) {
+        viewModelScope.launch {
+            reorderedPanels.forEachIndexed { newIndex, panel ->
+                val updatedPanel = panel.copy(panelIndex = newIndex)
+                repository.savePanel(updatedPanel)
+            }
+            _editorState.value = _editorState.value.copy(
+                statusMessage = "Ordre des cases mis à jour (${reorderedPanels.size} cases séquencées)."
+            )
+        }
+    }
 }

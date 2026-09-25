@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -231,6 +232,35 @@ fun StudioScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Canvas Layout button
+                    Surface(
+                        color = Color(0xFF1E2433),
+                        border = BorderStroke(1.dp, QiGold.copy(alpha = 0.7f)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .clickable { onNavigateToStoryboard() }
+                            .testTag("canvas_layout_quick_btn")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.TouchApp,
+                                contentDescription = null,
+                                tint = QiGold,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Layout & Bulles",
+                                color = QiGold,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
                     // Storyboard Grid button
                     Surface(
                         color = Color(0xFF1E2433),
@@ -241,20 +271,20 @@ fun StudioScreen(
                             .testTag("storyboard_quick_btn")
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.GridView,
                                 contentDescription = null,
                                 tint = ManhuaCyan,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "Storyboard",
                                 color = ManhuaCyan,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }

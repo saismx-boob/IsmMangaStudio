@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
         MangaPage::class,
         MangaPanel::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -970,4 +970,45 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
             )
         }
     }
+
+    /**
+     * Applies a custom canvas-defined manga page layout with variable panel sizes
+     * and speech bubble placement placeholders to the current page.
+     */
+    fun applyCustomLayoutDefinition(
+        customPanels: List<MangaPanel>,
+        layoutType: String = "CUSTOM_CANVAS"
+    ) {
+        val page = _selectedPage.value ?: return
+        viewModelScope.launch {
+            repository.savePage(page.copy(layoutType = layoutType))
+            val existingPanels = _currentPanels.value
+
+            // If the custom layout has fewer panels than before, remove the excess
+            if (customPanels.size < existingPanels.size) {
+                val toDelete = existingPanels.drop(customPanels.size)
+                toDelete.forEach { repository.deletePanel(it) }
+            }
+
+            // Save all panels with their variable sizes (widthFraction, heightDp) and bubble positions
+            customPanels.forEachIndexed { index, panel ->
+                val existing = existingPanels.getOrNull(index)
+                val panelToPersist = panel.copy(
+                    id = existing?.id ?: 0L,
+                    pageId = page.id,
+                    panelIndex = index,
+                    imagePath = existing?.imagePath ?: panel.imagePath,
+                    characterId = panel.characterId ?: existing?.characterId,
+                    backgroundId = panel.backgroundId ?: existing?.backgroundId,
+                    userPrompt = panel.userPrompt.ifBlank { existing?.userPrompt ?: "Case ${index + 1}" }
+                )
+                repository.savePanel(panelToPersist)
+            }
+
+            _editorState.value = _editorState.value.copy(
+                statusMessage = "Mise en page canvas appliquée (${customPanels.size} cases personnalisées, bulles positionnées) !"
+            )
+        }
+    }
 }
+

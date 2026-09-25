@@ -140,5 +140,7 @@ data class MangaPanel(
     val bubbleBorderColor: Long = 0xFF000000,
     val bubbleNormalizedX: Float = 0.5f,
     val bubbleNormalizedY: Float = 0.8f,
+    val widthFraction: Float = 1.0f, // 1.0 = Full width, 0.5 = Half, 0.67 = Two-thirds, 0.33 = One-third
+    val heightDp: Int = 180, // Variable height in dp for custom manga layouts
     val createdAt: Long = System.currentTimeMillis()
 )

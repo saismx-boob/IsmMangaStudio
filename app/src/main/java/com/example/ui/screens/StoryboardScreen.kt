@@ -115,6 +115,7 @@ import com.example.data.model.GridPageLayout
 import com.example.data.model.MangaPage
 import com.example.data.model.MangaPanel
 import com.example.ui.MangaStudioViewModel
+import com.example.ui.components.MangaLayoutCanvasView
 import com.example.ui.components.MangaPageSequencerView
 import com.example.ui.components.PageSequencerGridMode
 import com.example.ui.theme.InkBorder
@@ -431,6 +432,19 @@ fun StoryboardScreen(
                         },
                         modifier = Modifier.fillMaxSize()
                     )
+                } else if (workspaceViewMode == 1) {
+                    // Drag-and-drop canvas UI component to define manga page layouts (variable panel sizes & bubble placeholders)
+                    MangaLayoutCanvasView(
+                        page = selectedPage,
+                        panels = panels,
+                        characters = characters,
+                        backgrounds = backgrounds,
+                        onApplyLayout = { updatedPanels, layoutType ->
+                            viewModel.applyCustomLayoutDefinition(updatedPanels, layoutType)
+                        },
+                        onNavigateBack = onNavigateBack,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 } else {
                     // Manga Page Grid Sheet (Planche layout with Margins)
                     MangaPageGridSheet(
@@ -489,71 +503,73 @@ fun StoryboardScreen(
                 }
             }
 
-            // Bottom Palette Drawer: Characters & Dynamic Reference Poses
-            StoryboardAssetPalette(
-                activeTab = activeAssetTab,
-                onTabSelected = { activeAssetTab = it },
-                characters = characters,
-                poses = POSE_PRESETS,
-                backgrounds = backgrounds,
-                selectedCategory = selectedPoseCategory,
-                onCategorySelected = { selectedPoseCategory = it },
-                selectedAsset = selectedPaletteAsset,
-                onAssetClicked = { asset ->
-                    selectedPaletteAsset = if (selectedPaletteAsset == asset) null else asset
-                },
-                onDragStart = { asset, startOffset ->
-                    isDragging = true
-                    draggedAsset = asset
-                    dragGlobalPosition = startOffset
-                },
-                onDrag = { dragDelta ->
-                    dragGlobalPosition += dragDelta
-                    // Check if hovering over any panel slot
-                    val hoverIndex = slotBounds.entries.firstOrNull { (_, rect) ->
-                        rect.contains(dragGlobalPosition)
-                    }?.key
-                    activeHoverSlotIndex = hoverIndex
-                },
-                onDragEnd = {
-                    val dropTargetIndex = activeHoverSlotIndex
-                    val asset = draggedAsset
-                    if (dropTargetIndex != null && asset != null) {
-                        val targetPanel = panels.getOrNull(dropTargetIndex)
-                        if (targetPanel != null) {
-                            when (asset) {
-                                is StoryboardAsset.CharacterAsset -> {
-                                    viewModel.applyCharacterAndPoseToPanel(
-                                        panel = targetPanel,
-                                        character = asset.character,
-                                        poseAction = null
-                                    )
-                                }
-                                is StoryboardAsset.PoseAsset -> {
-                                    val currentChar = characters.firstOrNull { it.id == targetPanel.characterId }
-                                    viewModel.applyCharacterAndPoseToPanel(
-                                        panel = targetPanel,
-                                        character = currentChar,
-                                        poseAction = asset.pose.actionPrompt,
-                                        camera = asset.pose.camera
-                                    )
-                                }
-                                is StoryboardAsset.BackgroundAsset -> {
-                                    viewModel.applyCharacterAndPoseToPanel(
-                                        panel = targetPanel,
-                                        character = characters.firstOrNull { it.id == targetPanel.characterId },
-                                        poseAction = null,
-                                        background = asset.background
-                                    )
+            // Bottom Palette Drawer: Characters & Dynamic Reference Poses (Modes Séquenceur & Planche)
+            if (workspaceViewMode != 1) {
+                StoryboardAssetPalette(
+                    activeTab = activeAssetTab,
+                    onTabSelected = { activeAssetTab = it },
+                    characters = characters,
+                    poses = POSE_PRESETS,
+                    backgrounds = backgrounds,
+                    selectedCategory = selectedPoseCategory,
+                    onCategorySelected = { selectedPoseCategory = it },
+                    selectedAsset = selectedPaletteAsset,
+                    onAssetClicked = { asset ->
+                        selectedPaletteAsset = if (selectedPaletteAsset == asset) null else asset
+                    },
+                    onDragStart = { asset, startOffset ->
+                        isDragging = true
+                        draggedAsset = asset
+                        dragGlobalPosition = startOffset
+                    },
+                    onDrag = { dragDelta ->
+                        dragGlobalPosition += dragDelta
+                        // Check if hovering over any panel slot
+                        val hoverIndex = slotBounds.entries.firstOrNull { (_, rect) ->
+                            rect.contains(dragGlobalPosition)
+                        }?.key
+                        activeHoverSlotIndex = hoverIndex
+                    },
+                    onDragEnd = {
+                        val dropTargetIndex = activeHoverSlotIndex
+                        val asset = draggedAsset
+                        if (dropTargetIndex != null && asset != null) {
+                            val targetPanel = panels.getOrNull(dropTargetIndex)
+                            if (targetPanel != null) {
+                                when (asset) {
+                                    is StoryboardAsset.CharacterAsset -> {
+                                        viewModel.applyCharacterAndPoseToPanel(
+                                            panel = targetPanel,
+                                            character = asset.character,
+                                            poseAction = null
+                                        )
+                                    }
+                                    is StoryboardAsset.PoseAsset -> {
+                                        val currentChar = characters.firstOrNull { it.id == targetPanel.characterId }
+                                        viewModel.applyCharacterAndPoseToPanel(
+                                            panel = targetPanel,
+                                            character = currentChar,
+                                            poseAction = asset.pose.actionPrompt,
+                                            camera = asset.pose.camera
+                                        )
+                                    }
+                                    is StoryboardAsset.BackgroundAsset -> {
+                                        viewModel.applyCharacterAndPoseToPanel(
+                                            panel = targetPanel,
+                                            character = characters.firstOrNull { it.id == targetPanel.characterId },
+                                            poseAction = null,
+                                            background = asset.background
+                                        )
+                                    }
                                 }
                             }
                         }
+                        isDragging = false
+                        draggedAsset = null
+                        activeHoverSlotIndex = null
                     }
-                    isDragging = false
-                    draggedAsset = null
-                    activeHoverSlotIndex = null
-                }
-            )
+                )
+            }
         }
 
         // Floating Drag Overlay Representation
@@ -645,7 +661,11 @@ fun StoryboardTopBar(
                             )
                         }
                         Text(
-                            text = if (viewMode == 0) "Séquenceur réorganisable & grille" else "Grille de mise en page vierge & composition",
+                            text = when (viewMode) {
+                                1 -> "Canvas Drag & Drop : Tailles variables & Bulles vectorielles"
+                                2 -> "Planche Manga : Repères B4 & Composition"
+                                else -> "Séquenceur réorganisable & Grille dynamique"
+                            },
                             color = TextSecondary,
                             fontSize = 11.sp
                         )
@@ -653,13 +673,14 @@ fun StoryboardTopBar(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    // View Mode Switcher
+                    // View Mode Switcher: 0: Sequencer, 1: Canvas Layout & Bubbles, 2: Manga Proof Sheet
                     Surface(
                         color = InkMidnight,
                         shape = RoundedCornerShape(6.dp),
                         border = BorderStroke(1.dp, InkBorder)
                     ) {
                         Row(modifier = Modifier.padding(2.dp)) {
+                            // 0: Sequencer
                             IconButton(
                                 onClick = { onViewModeChange(0) },
                                 modifier = Modifier
@@ -677,6 +698,7 @@ fun StoryboardTopBar(
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
+                            // 1: Drag-and-Drop Canvas Layout Designer
                             IconButton(
                                 onClick = { onViewModeChange(1) },
                                 modifier = Modifier
@@ -685,12 +707,30 @@ fun StoryboardTopBar(
                                         if (viewMode == 1) ManhuaCyan.copy(alpha = 0.25f) else Color.Transparent,
                                         RoundedCornerShape(4.dp)
                                     )
-                                    .testTag("mode_canvas_btn")
+                                    .testTag("mode_canvas_layout_btn")
                             ) {
                                 Icon(
                                     Icons.Default.TouchApp,
-                                    contentDescription = "Mode Planche",
+                                    contentDescription = "Mode Canvas Layout (Drag & Drop, Tailles & Bulles)",
                                     tint = if (viewMode == 1) ManhuaCyan else TextMuted,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            // 2: Authentic B4 Proof Sheet
+                            IconButton(
+                                onClick = { onViewModeChange(2) },
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .background(
+                                        if (viewMode == 2) ManhuaCyan.copy(alpha = 0.25f) else Color.Transparent,
+                                        RoundedCornerShape(4.dp)
+                                    )
+                                    .testTag("mode_sheet_btn")
+                            ) {
+                                Icon(
+                                    Icons.Default.ViewAgenda,
+                                    contentDescription = "Mode Planche Manga B4",
+                                    tint = if (viewMode == 2) ManhuaCyan else TextMuted,
                                     modifier = Modifier.size(16.dp)
                                 )
                             }

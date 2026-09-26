@@ -36,7 +36,11 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Tune
+import com.example.ai.provider.AiProvider
+import com.example.ui.components.AiProviderSettingsDialog
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -122,7 +126,10 @@ fun StudioScreen(
     val panels by viewModel.currentPanels.collectAsState()
     val characters by viewModel.allCharacters.collectAsState()
     val backgrounds by viewModel.allBackgrounds.collectAsState()
+    val activeProvider by viewModel.activeAiProvider.collectAsState()
+    val activeAiConfig by viewModel.activeAiConfig.collectAsState()
 
+    var showAiSettingsDialog by remember { mutableStateOf(false) }
     var showCharacterDialog by remember { mutableStateOf(false) }
     var showBackgroundDialog by remember { mutableStateOf(false) }
     var showBubbleDialog by remember { mutableStateOf(false) }
@@ -494,6 +501,107 @@ fun StudioScreen(
                     modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // AI Generation Engine & Key Configuration Banner
+                    Surface(
+                        color = InkMidnight,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(activeProvider.badgeColor).copy(alpha = 0.6f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showAiSettingsDialog = true }
+                            .testTag("open_ai_settings_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(activeProvider.badgeColor))
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "MOTEUR IA : ",
+                                        color = TextSecondary,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = activeProvider.displayName,
+                                        color = MangaPaperWhite,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Text(
+                                    text = "Modèle : ${activeAiConfig.selectedModel} • ${if (!activeProvider.requiresKey) "Mode Gratuit Actif ✓" else if (activeAiConfig.apiKey.isNotBlank()) "Clé configurée ✓" else "Clé API requise ⚠️"}",
+                                    color = if (!activeProvider.requiresKey || activeAiConfig.apiKey.isNotBlank()) ManhuaCyan else QiGold,
+                                    fontSize = 11.sp
+                                )
+                            }
+
+                            Surface(
+                                color = Color(activeProvider.badgeColor).copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, Color(activeProvider.badgeColor).copy(alpha = 0.5f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Tune,
+                                        contentDescription = null,
+                                        tint = MangaPaperWhite,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Changer d'IA",
+                                        color = MangaPaperWhite,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (activeProvider.requiresKey && activeAiConfig.apiKey.isBlank()) {
+                        Surface(
+                            color = QiGold.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, QiGold.copy(alpha = 0.5f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showAiSettingsDialog = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "⚠️ Clé API non renseignée pour ${activeProvider.shortName}. Touchez pour la saisir ou basculer en Mode Gratuit sans clé.",
+                                    color = QiGold,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Configurer",
+                                    color = MangaPaperWhite,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
@@ -843,7 +951,7 @@ fun StudioScreen(
                             Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.White)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "GÉNÉRER LA CASE #${editorState.activePanelIndex + 1} AVEC COHÉRENCE IA",
+                                text = "GÉNÉRER AVEC ${activeProvider.shortName.uppercase()} (#${editorState.activePanelIndex + 1})",
                                 color = Color.White,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 14.sp,
@@ -863,11 +971,44 @@ fun StudioScreen(
                     }
 
                     if (editorState.errorMessage != null) {
-                        Text(
-                            text = "⚠ ${editorState.errorMessage}",
-                            color = Color(0xFFF87171),
-                            fontSize = 12.sp
-                        )
+                        Surface(
+                            color = Color(0xFF7F1D1D).copy(alpha = 0.35f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = "⚠ ${editorState.errorMessage}",
+                                    color = Color(0xFFFCA5A5),
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { showAiSettingsDialog = true },
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f))
+                                    ) {
+                                        Text("Paramètres IA / Clés", fontSize = 11.sp)
+                                    }
+                                    if (activeProvider != AiProvider.POLLINATIONS_FREE) {
+                                        Button(
+                                            onClick = {
+                                                viewModel.setActiveAiProvider(AiProvider.POLLINATIONS_FREE)
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                                        ) {
+                                            Text("Passer au Mode Gratuit", fontSize = 11.sp, color = Color.White)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -992,6 +1133,18 @@ fun StudioScreen(
                 exportingPanel = null
                 exportPreviewBitmap = null
             }
+        )
+    }
+
+    if (showAiSettingsDialog) {
+        AiProviderSettingsDialog(
+            preferencesManager = viewModel.aiPreferencesManager,
+            multiAiService = viewModel.multiAiService,
+            activeProvider = activeProvider,
+            onProviderChanged = { newProvider ->
+                viewModel.setActiveAiProvider(newProvider)
+            },
+            onDismiss = { showAiSettingsDialog = false }
         )
     }
 }

@@ -12,6 +12,10 @@ import com.example.ai.MangaArtStyle
 import com.example.ai.MangaGenerationResult
 import com.example.ai.PromptConsistencyEngine
 import com.example.ai.ScenePromptDraft
+import com.example.ai.provider.AiPreferencesManager
+import com.example.ai.provider.AiProvider
+import com.example.ai.provider.AiProviderConfig
+import com.example.ai.provider.MultiAiImageService
 import com.example.data.database.AppDatabase
 import com.example.data.model.BackgroundProfile
 import com.example.data.model.CharacterProfile
@@ -61,6 +65,22 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
 
     private val repository = MangaRepository(AppDatabase.getInstance(application))
     private val geminiService = GeminiMangaService(application)
+    val aiPreferencesManager = AiPreferencesManager(application)
+    val multiAiService = MultiAiImageService(application)
+
+    val activeAiProvider: StateFlow<AiProvider> = aiPreferencesManager.activeProvider
+    val activeAiConfig: StateFlow<AiProviderConfig> = aiPreferencesManager.currentConfig
+
+    fun setActiveAiProvider(provider: AiProvider) {
+        aiPreferencesManager.setActiveProvider(provider)
+        _editorState.value = _editorState.value.copy(
+            statusMessage = "Moteur IA actif changé pour : ${provider.displayName}"
+        )
+    }
+
+    fun saveAiConfig(config: AiProviderConfig) {
+        aiPreferencesManager.saveConfig(config)
+    }
 
     // Flow states
     val allProjects: StateFlow<List<MangaProject>> = repository.allProjects
@@ -423,14 +443,17 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
                 contrastLevel = state.contrastLevel
             )
 
+            val activeConfig = aiPreferencesManager.currentConfig.value
+            val activeProvider = activeConfig.provider
+
             val consistencyStageDesc = if (character != null) {
                 if (character.firstAppearanceImagePath != null) {
-                    "Application de l'Ancre #${character.visualUid} (1ère apparition)..."
+                    "Cohérence #${character.visualUid} • ${activeProvider.shortName}..."
                 } else {
-                    "Établissement de la 1ère apparition (#${character.visualUid})..."
+                    "1ère apparition (#${character.visualUid}) • ${activeProvider.shortName}..."
                 }
             } else {
-                "Génération IA (${state.selectedArtStyle.displayName})..."
+                "Génération ${activeProvider.shortName} (${state.selectedArtStyle.displayName})..."
             }
 
             _editorState.value = _editorState.value.copy(
@@ -438,10 +461,11 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
             )
 
             val aspect = state.selectedArtStyle.defaultAspect
-            val result = geminiService.generateMangaPanel(
+            val result = multiAiService.generateMangaPanel(
                 prompt = coherentPrompt,
                 aspectRatio = if (aspect == "9:16") "9:16" else if (aspect == "3:4") "3:4" else "1:1",
-                referenceImagePaths = refImages
+                referenceImagePaths = refImages,
+                config = activeConfig
             )
 
             when (result) {
@@ -468,7 +492,7 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
 
                     val savedPanelId = repository.savePanel(updatedPanel)
 
-                    var successMsg = if (result.isAiGenerated) "Case générée avec succès !" else "Aperçu artistique généré"
+                    var successMsg = if (result.isAiGenerated) "Case générée avec succès via ${activeProvider.displayName} !" else "Aperçu artistique (${activeProvider.shortName})"
 
                     // Character visual consistency auto-anchoring on first appearance
                     if (character != null) {

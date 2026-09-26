@@ -50,7 +50,9 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Splitscreen
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewAgenda
+import com.example.ui.components.AiProviderSettingsDialog
 import androidx.compose.material.icons.filled.ViewCompact
 import androidx.compose.material.icons.filled.ViewDay
 import androidx.compose.material.icons.filled.ViewModule
@@ -244,6 +246,8 @@ fun StoryboardScreen(
     val panels by viewModel.currentPanels.collectAsState()
     val characters by viewModel.allCharacters.collectAsState()
     val backgrounds by viewModel.allBackgrounds.collectAsState()
+    val activeProvider by viewModel.activeAiProvider.collectAsState()
+    var showAiSettingsDialog by remember { mutableStateOf(false) }
 
     // Active selected asset tab in drawer
     var activeAssetTab by remember { mutableIntStateOf(0) } // 0: Personnages, 1: Poses, 2: Décors
@@ -321,6 +325,54 @@ fun StoryboardScreen(
                         }
                     }
                 }
+            }
+
+            // Active AI Provider indicator
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Surface(
+                    color = Color(activeProvider.badgeColor).copy(alpha = 0.18f),
+                    border = BorderStroke(1.dp, Color(activeProvider.badgeColor).copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.clickable { showAiSettingsDialog = true }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(Color(activeProvider.badgeColor))
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "IA de rendu : ${activeProvider.displayName}",
+                            color = MangaPaperWhite,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Changer",
+                            tint = ManhuaCyan,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Touchez pour changer de moteur / clé",
+                    color = TextSecondary,
+                    fontSize = 10.sp
+                )
             }
 
             // Quick instruction banner
@@ -594,6 +646,16 @@ fun StoryboardScreen(
                     viewModel.splitPanelIntoSubPanels(updatedTarget, count)
                     showSplitDialog = false
                 }
+            )
+        }
+
+        if (showAiSettingsDialog) {
+            AiProviderSettingsDialog(
+                preferencesManager = viewModel.aiPreferencesManager,
+                multiAiService = viewModel.multiAiService,
+                activeProvider = activeProvider,
+                onProviderChanged = { viewModel.setActiveAiProvider(it) },
+                onDismiss = { showAiSettingsDialog = false }
             )
         }
     }

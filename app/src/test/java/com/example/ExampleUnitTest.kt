@@ -121,5 +121,47 @@ class ExampleUnitTest {
     assertEquals("Cicatrice joue gauche", profile.distinctiveFeatures)
     assertEquals("UID-REN-SHONEN-99", profile.visualUid)
   }
+
+  @Test
+  fun testAiProvidersAvailableAndProperlyConfigured() {
+    val providers = com.example.ai.provider.AiProvider.entries
+    assertTrue(providers.any { it.id == "gemini" })
+    assertTrue(providers.any { it.id == "openai" })
+    assertTrue(providers.any { it.id == "grok" })
+    assertTrue(providers.any { it.id == "meta" })
+    assertTrue(providers.any { it.id == "alibaba_wanx" })
+    assertTrue(providers.any { it.id == "zhipu_cogview" })
+    assertTrue(providers.any { it.id == "siliconflow" })
+    assertTrue(providers.any { it.id == "pollinations_free" })
+    assertTrue(providers.any { it.id == "custom" })
+
+    // Verify Free Mode requires no key
+    val freeMode = com.example.ai.provider.AiProvider.POLLINATIONS_FREE
+    assertFalse(freeMode.requiresKey)
+
+    val freeConfig = com.example.ai.provider.AiProviderConfig(provider = freeMode)
+    assertTrue(freeConfig.isReady())
+
+    // Verify OpenAI requires key
+    val openAi = com.example.ai.provider.AiProvider.OPENAI
+    assertTrue(openAi.requiresKey)
+    val openAiEmptyConfig = com.example.ai.provider.AiProviderConfig(provider = openAi, apiKey = "")
+    assertFalse(openAiEmptyConfig.isReady())
+    val openAiConfigWithKey = com.example.ai.provider.AiProviderConfig(provider = openAi, apiKey = "sk-test-key")
+    assertTrue(openAiConfigWithKey.isReady())
+
+    // Verify Chinese Providers
+    val wanx = com.example.ai.provider.AiProvider.fromId("alibaba_wanx")
+    assertEquals(com.example.ai.provider.AiProvider.ALIBABA_WANX, wanx)
+    assertTrue(wanx.availableModels.contains("wanx-v1"))
+
+    val cogview = com.example.ai.provider.AiProvider.fromId("zhipu_cogview")
+    assertEquals(com.example.ai.provider.AiProvider.ZHIPU_COGVIEW, cogview)
+    assertTrue(cogview.availableModels.contains("cogview-3"))
+
+    val siliconflow = com.example.ai.provider.AiProvider.fromId("siliconflow")
+    assertEquals(com.example.ai.provider.AiProvider.SILICONFLOW, siliconflow)
+    assertTrue(siliconflow.availableModels.contains("Kwai-Kolors/Kolors"))
+  }
 }
 

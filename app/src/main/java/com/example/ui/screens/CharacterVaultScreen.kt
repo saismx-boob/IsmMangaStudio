@@ -39,14 +39,19 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mood
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Style
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,6 +59,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -61,6 +68,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -69,13 +77,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.ai.CameraPerspective
+import com.example.ai.MangaArtStyle
+import com.example.data.model.BackgroundProfile
 import com.example.data.model.CharacterProfile
 import com.example.ui.MangaStudioViewModel
 import com.example.ui.theme.InkBorder
@@ -87,6 +100,7 @@ import com.example.ui.theme.MangaPaperWhite
 import com.example.ui.theme.ManhuaCyan
 import com.example.ui.theme.QiGold
 import com.example.ui.theme.TextSecondary
+import android.widget.Toast
 import java.io.File
 import java.io.FileOutputStream
 
@@ -96,13 +110,46 @@ fun CharacterVaultScreen(
     onCharacterSelectedForStudio: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val characters by viewModel.allCharacters.collectAsState()
+    val backgrounds by viewModel.allBackgrounds.collectAsState()
     val editorState by viewModel.editorState.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedRoleFilter by remember { mutableStateOf("Tous") }
     var showEditorDialog by remember { mutableStateOf(false) }
     var characterToEdit by remember { mutableStateOf<CharacterProfile?>(null) }
+
+    // Dialog & Flow States for Reference Upload, AI Reference Generation, and Scene Generation
+    var characterForUpload by remember { mutableStateOf<CharacterProfile?>(null) }
+    var characterForAiRefGen by remember { mutableStateOf<CharacterProfile?>(null) }
+    var characterForSceneGen by remember { mutableStateOf<CharacterProfile?>(null) }
+    var inspectingImage by remember { mutableStateOf<Pair<CharacterProfile, String>?>(null) }
+
+    // Google Play compliant zero-permission Photo Picker for uploading reference images
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        val targetChar = characterForUpload
+        if (uri != null && targetChar != null) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val targetFile = File(context.filesDir, "char_ref_${targetChar.id}_${System.currentTimeMillis()}.jpg")
+                inputStream?.use { input ->
+                    FileOutputStream(targetFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                viewModel.addReferenceImageToCharacter(targetChar.id, targetFile.absolutePath)
+                Toast.makeText(context, "Image de référence ajoutée pour ${targetChar.name} !", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Toast.makeText(context, "Erreur lors de l'import : ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+        characterForUpload = null
+    }
 
     val filterOptions = listOf("Tous", "Shonen", "Manhua", "Cyber/Comics", "Seinen")
 
@@ -154,21 +201,43 @@ fun CharacterVaultScreen(
         ) {
             item {
                 Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = MangaCrimson,
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = "CHARACTER LIBRARY",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        color = QiGold.copy(alpha = 0.2f),
+                        border = BorderStroke(1.dp, QiGold.copy(alpha = 0.6f)),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = "COHÉRENCE & IDENTIFIANTS UNIQUE (#UID)",
+                            color = QiGold,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "BIBLIOTHÈQUE DE MODÈLES RÉUTILISABLES",
-                    color = MangaCrimson,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 1.sp
-                )
-                Text(
-                    text = "Gestion de la cohérence visuelle",
+                    text = "Bibliothèque de Personnages",
                     color = MangaPaperWhite,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Enregistrez ici vos fiches de personnages réutilisables (visages, tenues, traits distinctifs et ancres visuelles) pour garantir une ressemblance parfaite d'une case à l'autre.",
+                    text = "Uploadez ou générez des images de référence IA pour chaque héros. Les identifiants uniques (#UID) et l'ADN visuel garantissent une ressemblance parfaite lors de la génération de scènes dans le Studio.",
                     color = TextSecondary,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
@@ -304,6 +373,21 @@ fun CharacterVaultScreen(
                     },
                     onClearFirstAppearance = {
                         viewModel.clearFirstAppearanceAnchor(character.id)
+                    },
+                    onUploadRef = {
+                        characterForUpload = character
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    onGenerateAiRef = {
+                        characterForAiRefGen = character
+                    },
+                    onGenerateScene = {
+                        characterForSceneGen = character
+                    },
+                    onInspectImage = { path ->
+                        inspectingImage = Pair(character, path)
                     }
                 )
             }
@@ -324,6 +408,39 @@ fun CharacterVaultScreen(
             onDismiss = { showEditorDialog = false }
         )
     }
+
+    // Dialog for AI Reference Generation (portrait, turnaround, action pose, expressions)
+    characterForAiRefGen?.let { char ->
+        AiReferenceGeneratorDialog(
+            character = char,
+            viewModel = viewModel,
+            onDismiss = { characterForAiRefGen = null }
+        )
+    }
+
+    // Dialog for Scene Generation linking character #UID and visual traits
+    characterForSceneGen?.let { char ->
+        CharacterSceneGenerationDialog(
+            character = char,
+            viewModel = viewModel,
+            backgrounds = backgrounds,
+            onDismiss = { characterForSceneGen = null },
+            onLaunchInStudio = {
+                characterForSceneGen = null
+                onCharacterSelectedForStudio(char.id)
+            }
+        )
+    }
+
+    // Dialog for High-Res Inspection of Reference Images
+    inspectingImage?.let { (char, path) ->
+        ImageInspectionDialog(
+            character = char,
+            imagePath = path,
+            viewModel = viewModel,
+            onDismiss = { inspectingImage = null }
+        )
+    }
 }
 
 @Composable
@@ -337,6 +454,10 @@ fun CharacterCard(
     onDelete: () -> Unit,
     onRegenerateUid: () -> Unit,
     onClearFirstAppearance: () -> Unit,
+    onUploadRef: () -> Unit,
+    onGenerateAiRef: () -> Unit,
+    onGenerateScene: () -> Unit,
+    onInspectImage: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -347,6 +468,9 @@ fun CharacterCard(
             .fillMaxWidth()
             .testTag("character_card_${character.id}")
     ) {
+        val context = LocalContext.current
+        val clipboardManager = LocalClipboardManager.current
+
         Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // Character Avatar / Ref Image or Icon
@@ -573,6 +697,23 @@ fun CharacterCard(
                     Spacer(modifier = Modifier.width(4.dp))
 
                     IconButton(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString("#${character.visualUid}"))
+                            Toast.makeText(context, "UID #${character.visualUid} copié !", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier
+                            .size(28.dp)
+                            .testTag("copy_uid_${character.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copier UID",
+                            tint = QiGold,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+
+                    IconButton(
                         onClick = onRegenerateUid,
                         modifier = Modifier.size(28.dp)
                     ) {
@@ -772,12 +913,19 @@ fun CharacterCard(
                     ) {
                         allRefImages.forEachIndexed { idx, path ->
                             val file = File(path)
+                            val isPrimary = idx == 0
+                            val isAnchor = path == character.firstAppearanceImagePath
                             if (file.exists()) {
                                 Box(
                                     modifier = Modifier
-                                        .size(38.dp)
+                                        .size(48.dp)
                                         .clip(RoundedCornerShape(6.dp))
-                                        .border(1.dp, ManhuaCyan.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                                        .border(
+                                            width = if (isPrimary || isAnchor) 2.dp else 1.dp,
+                                            color = if (isAnchor) Color(0xFF10B981) else if (isPrimary) QiGold else ManhuaCyan.copy(alpha = 0.6f),
+                                            shape = RoundedCornerShape(6.dp)
+                                        )
+                                        .clickable { onInspectImage(path) }
                                 ) {
                                     AsyncImage(
                                         model = file,
@@ -785,31 +933,137 @@ fun CharacterCard(
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier.fillMaxSize()
                                     )
+                                    if (isPrimary) {
+                                        Surface(
+                                            color = QiGold,
+                                            shape = RoundedCornerShape(bottomEnd = 4.dp),
+                                            modifier = Modifier.align(Alignment.TopStart)
+                                        ) {
+                                            Text(
+                                                text = "⭐",
+                                                color = Color.Black,
+                                                fontSize = 8.sp,
+                                                modifier = Modifier.padding(horizontal = 2.dp)
+                                            )
+                                        }
+                                    } else if (isAnchor) {
+                                        Surface(
+                                            color = Color(0xFF10B981),
+                                            shape = RoundedCornerShape(bottomEnd = 4.dp),
+                                            modifier = Modifier.align(Alignment.TopStart)
+                                        ) {
+                                            Text(
+                                                text = "⚓",
+                                                color = Color.White,
+                                                fontSize = 8.sp,
+                                                modifier = Modifier.padding(horizontal = 2.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
+                    }
+                } else {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Aucune image de référence attachée. Uploadez ou générez un concept IA ci-dessous.",
+                        color = TextSecondary,
+                        fontSize = 10.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Actions: Upload Reference and Generate AI Reference
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onUploadRef,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = ManhuaCyan),
+                        border = BorderStroke(1.dp, ManhuaCyan.copy(alpha = 0.7f)),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("upload_ref_btn_${character.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            tint = ManhuaCyan,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Uploader Réf", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Button(
+                        onClick = onGenerateAiRef,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A8A)),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("generate_ai_ref_btn_${character.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = QiGold,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Générer Réf IA", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
+            // Direct Scene Generation Button with #UID
             Button(
+                onClick = onGenerateScene,
+                colors = ButtonDefaults.buttonColors(containerColor = QiGold),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("generate_scene_btn_${character.id}")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    tint = Color.Black,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Générer une Scène avec ce Héros (#${character.visualUid})",
+                    color = Color.Black,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            OutlinedButton(
                 onClick = onSelect,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isActiveInStudio) InkSurfaceVariant else MangaCrimson
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = if (isActiveInStudio) MangaCrimson else MangaPaperWhite
                 ),
+                border = BorderStroke(1.dp, if (isActiveInStudio) MangaCrimson else InkBorder),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("use_character_${character.id}_btn")
             ) {
                 if (isActiveInStudio) {
-                    Icon(Icons.Default.Check, contentDescription = null, tint = MangaCrimson)
+                    Icon(Icons.Default.Check, contentDescription = null, tint = MangaCrimson, modifier = Modifier.size(14.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Actif pour les prochaines cases", color = MangaPaperWhite, fontSize = 12.sp)
+                    Text("Actif dans le Studio", color = MangaPaperWhite, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 } else {
-                    Text("Verrouiller ce personnage pour le Studio", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("Sélectionner pour le Studio", color = TextSecondary, fontSize = 11.sp)
                 }
             }
         }
@@ -1343,6 +1597,631 @@ fun CharacterEditDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Annuler", color = TextSecondary)
+            }
+        }
+    )
+}
+
+@Composable
+fun AiReferenceGeneratorDialog(
+    character: CharacterProfile,
+    viewModel: MangaStudioViewModel,
+    onDismiss: () -> Unit
+) {
+    val editorState by viewModel.editorState.collectAsState()
+    var selectedSheetType by remember { mutableStateOf("PORTRAIT") }
+    val isGenerating = editorState.isGenerating
+
+    val sheetOptions = listOf(
+        Triple("PORTRAIT", "Portrait Officiel (HD)", "Gros plan face & buste, haute précision des traits et du regard"),
+        Triple("TURNAROUND", "Fiche Turnaround (3 Angles)", "Vues face, 3/4 et profil pour modèle 3D / dessinateur"),
+        Triple("ACTION_POSE", "Pose de Combat & Silhouette", "Posture d'action dynamique, gestuelle et tenue en mouvement"),
+        Triple("EXPRESSIONS", "Planche d'Expressions", "Variations émotionnelles (déterminé, sourire, choc, cri de combat)")
+    )
+
+    AlertDialog(
+        onDismissRequest = { if (!isGenerating) onDismiss() },
+        containerColor = InkSurface,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = QiGold)
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = "Générer Réf IA : ${character.name}",
+                        color = MangaPaperWhite,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Identifiant ADN : #${character.visualUid}",
+                        color = QiGold,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(420.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
+                    Text(
+                        text = "Type de Fiche de Référence :",
+                        color = MangaPaperWhite,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                items(sheetOptions) { (typeKey, title, desc) ->
+                    val isSelected = selectedSheetType == typeKey
+                    Surface(
+                        color = if (isSelected) Color(0xFF1E3A8A).copy(alpha = 0.5f) else InkMidnight,
+                        border = BorderStroke(1.dp, if (isSelected) ManhuaCyan else InkBorder),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !isGenerating) { selectedSheetType = typeKey }
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = { if (!isGenerating) selectedSheetType = typeKey },
+                                    colors = RadioButtonDefaults.colors(selectedColor = ManhuaCyan)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = title,
+                                    color = if (isSelected) Color.White else MangaPaperWhite,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                text = desc,
+                                color = TextSecondary,
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(start = 32.dp)
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "ADN Visuel injecté dans la génération :",
+                        color = QiGold,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Surface(
+                        color = InkMidnight,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.5.dp, InkBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("• Rôle / Archétype : ${character.role}", color = TextSecondary, fontSize = 10.sp)
+                            Text("• Cheveux : ${character.hairStyleColor}", color = TextSecondary, fontSize = 10.sp)
+                            Text("• Yeux : ${character.eyeDescription}", color = TextSecondary, fontSize = 10.sp)
+                            Text("• Tenue : ${character.clothingDescription}", color = TextSecondary, fontSize = 10.sp)
+                            Text("• Style : ${character.preferredArtStyle}", color = TextSecondary, fontSize = 10.sp)
+                            Text("• UID Cohérence : #${character.visualUid}", color = QiGold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                if (isGenerating) {
+                    item {
+                        Surface(
+                            color = Color(0xFF0F172A),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, ManhuaCyan),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = ManhuaCyan,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = editorState.generationStage.ifBlank { "Génération du modèle par Gemini AI..." },
+                                    color = Color.White,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    viewModel.generateCharacterReferenceSheet(character, selectedSheetType)
+                },
+                enabled = !isGenerating,
+                colors = ButtonDefaults.buttonColors(containerColor = ManhuaCyan),
+                modifier = Modifier.testTag("submit_generate_ai_ref")
+            ) {
+                if (isGenerating) {
+                    Text("Génération en cours...", color = Color.Black)
+                } else {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Lancer la Génération", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isGenerating
+            ) {
+                Text("Fermer", color = TextSecondary)
+            }
+        }
+    )
+}
+
+@Composable
+fun CharacterSceneGenerationDialog(
+    character: CharacterProfile,
+    viewModel: MangaStudioViewModel,
+    backgrounds: List<BackgroundProfile>,
+    onDismiss: () -> Unit,
+    onLaunchInStudio: () -> Unit
+) {
+    val context = LocalContext.current
+    val editorState by viewModel.editorState.collectAsState()
+    val currentPanels by viewModel.currentPanels.collectAsState()
+
+    var sceneAction by remember {
+        mutableStateOf("En plein combat intense, déclenche sa technique ultime avec détermination")
+    }
+    var selectedCamera by remember { mutableStateOf(CameraPerspective.LOW_ANGLE) }
+    var selectedLighting by remember { mutableStateOf("Ombres dramatiques et éclairs d'énergie") }
+    var selectedBackgroundId by remember { mutableStateOf<Long?>(null) }
+    var targetPanelIndex by remember { mutableIntStateOf(editorState.activePanelIndex) }
+
+    val lightingPresets = listOf(
+        "Ombres dramatiques et éclairs",
+        "Plein jour & reflets d'action",
+        "Néon cyberpunk sous la pluie",
+        "Coucher de soleil écarlate"
+    )
+
+    // Build structured prompt for display and execution
+    val structuredScenePrompt = remember(sceneAction, selectedCamera, selectedLighting, selectedBackgroundId) {
+        val bgDesc = backgrounds.firstOrNull { it.id == selectedBackgroundId }?.let { "Background: ${it.name} (${it.architectureDetails}, ${it.lightingMood}). " } ?: ""
+        "#[${character.visualUid}] Character ${character.name}, ${character.role}, ${character.hairStyleColor}, ${character.eyeDescription}, wearing ${character.clothingDescription}. Situation: $sceneAction. Camera: ${selectedCamera.promptModifier}. Lighting: $selectedLighting. ${bgDesc}Style: [${character.preferredArtStyle}]. High consistency with reference #${character.visualUid}."
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = InkSurface,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = QiGold)
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = "Scène avec : ${character.name}",
+                        color = MangaPaperWhite,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "UID Cohérence : #${character.visualUid}",
+                        color = QiGold,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(440.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Character summary chip
+                item {
+                    Surface(
+                        color = InkMidnight,
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val avatarPath = character.firstAppearanceImagePath ?: character.referenceImagePath
+                            if (avatarPath != null && File(avatarPath).exists()) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .border(1.dp, QiGold, CircleShape)
+                                ) {
+                                    AsyncImage(
+                                        model = File(avatarPath),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Column {
+                                Text(
+                                    text = "${character.name} • ${character.getReferenceImagesList().size} image(s) de référence liées",
+                                    color = MangaPaperWhite,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Les traits de visage et la tenue seront synchronisés par l'IA",
+                                    color = TextSecondary,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Situation / Action input
+                item {
+                    Text(
+                        text = "Action ou Situation dans la Scène :",
+                        color = MangaPaperWhite,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    OutlinedTextField(
+                        value = sceneAction,
+                        onValueChange = { sceneAction = it },
+                        placeholder = { Text("Que fait le personnage dans cette case ?", color = TextSecondary, fontSize = 12.sp) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("scene_action_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = InkMidnight,
+                            unfocusedContainerColor = InkMidnight,
+                            focusedBorderColor = QiGold,
+                            unfocusedBorderColor = InkBorder,
+                            focusedTextColor = MangaPaperWhite,
+                            unfocusedTextColor = MangaPaperWhite
+                        ),
+                        maxLines = 3
+                    )
+                }
+
+                // Camera Angle / Perspective Selection
+                item {
+                    Text(
+                        text = "Angle de Caméra & Cadrage :",
+                        color = MangaPaperWhite,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        CameraPerspective.entries.forEach { camera ->
+                            val isSelected = selectedCamera == camera
+                            Surface(
+                                color = if (isSelected) MangaCrimson else InkMidnight,
+                                border = BorderStroke(1.dp, if (isSelected) MangaCrimson else InkBorder),
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.clickable { selectedCamera = camera }
+                            ) {
+                                Text(
+                                    text = camera.displayName,
+                                    color = if (isSelected) Color.White else TextSecondary,
+                                    fontSize = 10.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Lighting selection
+                item {
+                    Text(
+                        text = "Ambiance & Éclairage :",
+                        color = MangaPaperWhite,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        lightingPresets.forEach { lighting ->
+                            val isSelected = selectedLighting == lighting
+                            Surface(
+                                color = if (isSelected) Color(0xFF1E3A8A) else InkMidnight,
+                                border = BorderStroke(1.dp, if (isSelected) ManhuaCyan else InkBorder),
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.clickable { selectedLighting = lighting }
+                            ) {
+                                Text(
+                                    text = lighting,
+                                    color = if (isSelected) Color.White else TextSecondary,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Target Panel Selector
+                if (currentPanels.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Générer dans la Case :",
+                            color = MangaPaperWhite,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            currentPanels.forEachIndexed { idx: Int, _ ->
+                                val isSelected = targetPanelIndex == idx
+                                Surface(
+                                    color = if (isSelected) QiGold else InkMidnight,
+                                    border = BorderStroke(1.dp, if (isSelected) QiGold else InkBorder),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.clickable { targetPanelIndex = idx }
+                                ) {
+                                    Text(
+                                        text = "Case #${idx + 1}",
+                                        color = if (isSelected) Color.Black else TextSecondary,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Prompt preview
+                item {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Aperçu du Prompt Structuré (IA) :",
+                        color = QiGold,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Surface(
+                        color = InkMidnight,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.5.dp, InkBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = structuredScenePrompt,
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 9.sp,
+                            lineHeight = 13.sp,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    viewModel.selectCharacter(character.id)
+                    viewModel.updatePrompt(structuredScenePrompt)
+                    viewModel.updateCamera(selectedCamera)
+                    selectedBackgroundId?.let { viewModel.selectBackground(it) }
+                    viewModel.selectPanelForEditing(targetPanelIndex)
+                    Toast.makeText(context, "Scène configurée avec #${character.visualUid} !", Toast.LENGTH_SHORT).show()
+                    onLaunchInStudio()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = QiGold),
+                modifier = Modifier.testTag("confirm_generate_scene_btn")
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Lancer dans le Studio", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuler", color = TextSecondary)
+            }
+        }
+    )
+}
+
+@Composable
+fun ImageInspectionDialog(
+    character: CharacterProfile,
+    imagePath: String,
+    viewModel: MangaStudioViewModel,
+    onDismiss: () -> Unit
+) {
+    val file = File(imagePath)
+    val isPrimary = character.referenceImagePath == imagePath
+    val isAnchor = character.firstAppearanceImagePath == imagePath
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = InkSurface,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.ZoomIn, contentDescription = null, tint = ManhuaCyan)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Image de Référence • ${character.name}",
+                    color = MangaPaperWhite,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (file.exists()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(240.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.5.dp, if (isAnchor) Color(0xFF10B981) else if (isPrimary) QiGold else InkBorder, RoundedCornerShape(8.dp))
+                    ) {
+                        AsyncImage(
+                            model = file,
+                            contentDescription = "Inspection de référence",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .background(InkMidnight, RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Image introuvable localement", color = TextSecondary)
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (isPrimary) {
+                        Surface(
+                            color = QiGold.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(4.dp),
+                            border = BorderStroke(1.dp, QiGold)
+                        ) {
+                            Text(
+                                text = "⭐ Référence Principale",
+                                color = QiGold,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                    if (isAnchor) {
+                        Surface(
+                            color = Color(0xFF10B981).copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(4.dp),
+                            border = BorderStroke(1.dp, Color(0xFF10B981))
+                        ) {
+                            Text(
+                                text = "⚓ Ancre 1ère Apparition",
+                                color = Color(0xFF34D399),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                // Actions: Set Primary, Lock Anchor, Delete
+                if (!isPrimary) {
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.setPrimaryReferenceImage(character.id, imagePath)
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = QiGold),
+                        border = BorderStroke(1.dp, QiGold.copy(alpha = 0.7f)),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Star, contentDescription = null, tint = QiGold, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Définir comme Réf. Principale", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                if (!isAnchor) {
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.lockFirstAppearanceAnchor(character.id, imagePath, null)
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF10B981)),
+                        border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.7f)),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Verrouiller comme Ancre 1ère Apparition", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        viewModel.removeReferenceImageFromCharacter(character.id, imagePath)
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444)),
+                    border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Supprimer de la Fiche", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = InkSurfaceVariant)
+            ) {
+                Text("Fermer", color = MangaPaperWhite)
             }
         }
     )

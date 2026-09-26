@@ -1,0 +1,14 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Ensure gradlew retains LF line endings
+/gradlew text eol=lf
+*.bat text eol=crlf
+
+# Binary files
+*.jar binary
+*.keystore binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary

@@ -124,6 +124,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.ai.MangaArtStyle
+import com.example.ai.ScenePromptDraft
 import com.example.data.model.BackgroundProfile
 import com.example.data.model.CharacterProfile
 import com.example.data.model.MangaPage
@@ -319,6 +321,7 @@ fun MangaLayoutCanvasView(
     backgrounds: List<BackgroundProfile>,
     onApplyLayout: (List<MangaPanel>, String) -> Unit,
     onNavigateBack: (() -> Unit)? = null,
+    onGenerateScenePrompts: (suspend (CharacterProfile?, MangaArtStyle, String, String, String, String) -> List<ScenePromptDraft>)? = null,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -362,6 +365,10 @@ fun MangaLayoutCanvasView(
 
     // Fullsheet preview dialog
     var showProofPreviewDialog by remember { mutableStateOf(false) }
+
+    // AI Scene Prompt Generator Dialog
+    var showAiPromptGeneratorDialog by remember { mutableStateOf(false) }
+    var aiPromptGeneratorTargetPanelIndex by remember { mutableIntStateOf(0) }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF090C12)),
@@ -431,6 +438,24 @@ fun MangaLayoutCanvasView(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // AI Prompt Generator Button
+                    Button(
+                        onClick = {
+                            aiPromptGeneratorTargetPanelIndex = selectedPanelIndex.coerceIn(0, (layoutPanels.size - 1).coerceAtLeast(0))
+                            showAiPromptGeneratorDialog = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7E22CE)),
+                        border = BorderStroke(1.dp, Color(0xFFC084FC).copy(alpha = 0.8f)),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier
+                            .height(32.dp)
+                            .testTag("canvas_ai_prompt_generator_btn")
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color.White)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Prompt IA", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+
                     // Templates button
                     OutlinedButton(
                         onClick = { showTemplatesDialog = true },
@@ -647,6 +672,11 @@ fun MangaLayoutCanvasView(
                             )
                         )
                         selectedPanelIndex = nextIdx
+                    },
+                    onOpenAiPrompt = { panelIdx ->
+                        aiPromptGeneratorTargetPanelIndex = panelIdx
+                        selectedPanelIndex = panelIdx
+                        showAiPromptGeneratorDialog = true
                     }
                 )
             }
@@ -660,6 +690,7 @@ fun MangaLayoutCanvasView(
                     panel = curPanel,
                     panelIndex = selectedPanelIndex,
                     totalPanels = layoutPanels.size,
+                    character = characters.firstOrNull { it.id == curPanel.characterId },
                     onWidthChanged = { fraction ->
                         layoutPanels[selectedPanelIndex] = curPanel.copy(widthFraction = fraction)
                     },
@@ -681,6 +712,10 @@ fun MangaLayoutCanvasView(
                             layoutPanels.removeAt(selectedPanelIndex)
                             selectedPanelIndex = (selectedPanelIndex - 1).coerceAtLeast(0)
                         }
+                    },
+                    onOpenAiPrompt = {
+                        aiPromptGeneratorTargetPanelIndex = selectedPanelIndex
+                        showAiPromptGeneratorDialog = true
                     }
                 )
             }
@@ -749,6 +784,32 @@ fun MangaLayoutCanvasView(
                 selectedPanelIndex = 0
                 showTemplatesDialog = false
             }
+        )
+    }
+
+    // AI Scene Prompt Generator Dialog
+    if (showAiPromptGeneratorDialog) {
+        CanvasAiPromptGeneratorDialog(
+            initialPanelIndex = aiPromptGeneratorTargetPanelIndex,
+            panels = layoutPanels.toList(),
+            characters = characters,
+            backgrounds = backgrounds,
+            initialArtStyle = MangaArtStyle.MANGA_SHONEN,
+            onDismiss = { showAiPromptGeneratorDialog = false },
+            onApplyPrompt = { targetIdx, prompt, charId, bgId, sfx ->
+                if (targetIdx in layoutPanels.indices) {
+                    val currentP = layoutPanels[targetIdx]
+                    layoutPanels[targetIdx] = currentP.copy(
+                        userPrompt = prompt,
+                        characterId = charId ?: currentP.characterId,
+                        backgroundId = bgId ?: currentP.backgroundId,
+                        dialogueText = if (!sfx.isNullOrBlank() && currentP.dialogueText.isNullOrBlank()) sfx else currentP.dialogueText
+                    )
+                    selectedPanelIndex = targetIdx
+                }
+                showAiPromptGeneratorDialog = false
+            },
+            onGenerateScenePrompts = onGenerateScenePrompts
         )
     }
 }
@@ -890,7 +951,8 @@ fun MangaPageDraftingBoard(
     onMovePanelUp: (Int) -> Unit,
     onMovePanelDown: (Int) -> Unit,
     onDeletePanel: (Int) -> Unit,
-    onAddPanel: () -> Unit
+    onAddPanel: () -> Unit,
+    onOpenAiPrompt: (Int) -> Unit = {}
 ) {
     // Manuscript Board Container
     Card(
@@ -989,6 +1051,7 @@ fun MangaPageDraftingBoard(
                             onMoveUp = { onMovePanelUp(firstIndex) },
                             onMoveDown = { onMovePanelDown(firstIndex) },
                             onDelete = { onDeletePanel(firstIndex) },
+                            onOpenAiPrompt = { onOpenAiPrompt(firstIndex) },
                             modifier = Modifier.fillMaxWidth()
                         )
                         currentPanelIndex++
@@ -1026,6 +1089,7 @@ fun MangaPageDraftingBoard(
                                     onMoveUp = { onMovePanelUp(pIndex) },
                                     onMoveDown = { onMovePanelDown(pIndex) },
                                     onDelete = { onDeletePanel(pIndex) },
+                                    onOpenAiPrompt = { onOpenAiPrompt(pIndex) },
                                     modifier = Modifier.weight(pPanel.widthFraction.coerceIn(0.2f, 1.0f))
                                 )
                             }
@@ -1084,6 +1148,7 @@ fun CanvasPanelFrame(
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     onDelete: () -> Unit,
+    onOpenAiPrompt: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -1128,10 +1193,11 @@ fun CanvasPanelFrame(
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                // Blueprint drawing area
+                // Blueprint drawing area (clickable to open AI prompt generator)
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        .clickable { onOpenAiPrompt() }
                         .padding(10.dp),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -1244,21 +1310,42 @@ fun CanvasPanelFrame(
                     }
                 }
 
-                // Bubble Quick Edit / Add Badge
-                if (hasBubble) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Quick AI Prompt Button
                     Surface(
-                        color = Color.Black.copy(alpha = 0.85f),
+                        color = Color(0xFF581C87).copy(alpha = 0.85f),
                         shape = RoundedCornerShape(4.dp),
-                        border = BorderStroke(1.dp, MangaCrimson),
-                        modifier = Modifier.clickable { onEditBubble() }
+                        border = BorderStroke(1.dp, Color(0xFFC084FC).copy(alpha = 0.7f)),
+                        modifier = Modifier
+                            .clickable { onOpenAiPrompt() }
+                            .testTag("panel_ai_badge_$panelIndex")
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Edit, contentDescription = null, tint = MangaCrimson, modifier = Modifier.size(10.dp))
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFFE9D5FF), modifier = Modifier.size(10.dp))
                             Spacer(modifier = Modifier.width(3.dp))
-                            Text("Bulle", color = MangaCrimson, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Text("IA", color = Color(0xFFE9D5FF), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Bubble Quick Edit / Add Badge
+                    if (hasBubble) {
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.85f),
+                            shape = RoundedCornerShape(4.dp),
+                            border = BorderStroke(1.dp, MangaCrimson),
+                            modifier = Modifier.clickable { onEditBubble() }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null, tint = MangaCrimson, modifier = Modifier.size(10.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Bulle", color = MangaCrimson, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -1305,11 +1392,13 @@ fun SelectedPanelControlsBar(
     panel: MangaPanel,
     panelIndex: Int,
     totalPanels: Int,
+    character: CharacterProfile? = null,
     onWidthChanged: (Float) -> Unit,
     onHeightChanged: (Int) -> Unit,
     onAddBubble: () -> Unit,
     onEditBubble: () -> Unit,
-    onDeletePanel: () -> Unit
+    onDeletePanel: () -> Unit,
+    onOpenAiPrompt: () -> Unit = {}
 ) {
     Surface(
         color = Color(0xFF10141D),
@@ -1412,6 +1501,75 @@ fun SelectedPanelControlsBar(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                             )
                         }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Panel Prompt Preview & AI Prompt Generator Callout
+            Surface(
+                color = Color(0xFF0D111A),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Color(0xFF263047)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenAiPrompt() }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "PROMPT DE LA CASE :",
+                                color = Color(0xFFC084FC),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            if (character != null) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    color = QiGold.copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "★ ${character.name} [#${character.visualUid}]",
+                                        color = QiGold,
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = panel.userPrompt.ifBlank { "Aucun prompt défini - Touchez pour rédiger avec l'IA Gemini..." },
+                            color = if (panel.userPrompt.isBlank()) TextMuted else MangaPaperWhite,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Button(
+                        onClick = onOpenAiPrompt,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7E22CE)),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier
+                            .height(28.dp)
+                            .testTag("panel_ai_prompt_builder_btn")
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(11.dp), tint = Color.White)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Rédiger IA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }

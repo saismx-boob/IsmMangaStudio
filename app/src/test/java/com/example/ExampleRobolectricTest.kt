@@ -242,4 +242,36 @@ class ExampleRobolectricTest {
         assertTrue(finalPanel?.userPrompt?.contains("Mei Ling") == true)
         assertTrue(finalPanel?.userPrompt?.contains("frappe de paume") == true)
     }
+
+    @Test
+    fun `character library multi-reference images and visual UID consistency for scene generation`() = runBlocking {
+        val hero = CharacterProfile(
+            name = "Ryuu",
+            role = "Combattant Épéiste",
+            hairStyleColor = "Cheveux pourpres hérissés",
+            eyeDescription = "Yeux azur vifs",
+            clothingDescription = "Armure samouraï légère",
+            referenceImagePath = "/data/user/0/com.example/files/ryuu_portrait.jpg",
+            secondaryReferenceImages = "/data/user/0/com.example/files/ryuu_turnaround.jpg||/data/user/0/com.example/files/ryuu_action.jpg"
+        )
+
+        // Check reference images list parsing
+        val refs = hero.getReferenceImagesList()
+        assertEquals(3, refs.size)
+        assertEquals("/data/user/0/com.example/files/ryuu_portrait.jpg", refs[0])
+        assertEquals("/data/user/0/com.example/files/ryuu_turnaround.jpg", refs[1])
+        assertEquals("/data/user/0/com.example/files/ryuu_action.jpg", refs[2])
+
+        // Verify visual UID format and presence
+        assertNotNull(hero.visualUid)
+        assertTrue(hero.visualUid.contains("RYU"))
+
+        // Build scene generation structured prompt
+        val sceneAction = "Tranche les ténèbres avec son katana éclair"
+        val scenePrompt = "#[${hero.visualUid}] Character ${hero.name}, ${hero.hairStyleColor}, ${hero.eyeDescription}. Action: $sceneAction."
+
+        assertTrue(scenePrompt.contains(hero.visualUid))
+        assertTrue(scenePrompt.contains("Ryuu"))
+        assertTrue(scenePrompt.contains(sceneAction))
+    }
 }

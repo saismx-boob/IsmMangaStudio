@@ -68,7 +68,7 @@ fun MangaStudioApp(viewModel: MangaStudioViewModel) {
     val navItems = listOf(
         NavigationItem("Studio", Icons.Default.Palette, "nav_studio"),
         NavigationItem("Storyboard", Icons.Default.GridView, "nav_storyboard"),
-        NavigationItem("Personnages", Icons.Default.Person, "nav_characters"),
+        NavigationItem("Character Library", Icons.Default.Person, "nav_characters"),
         NavigationItem("Décors", Icons.Default.Terrain, "nav_backgrounds"),
         NavigationItem("Lecteur BD", Icons.Default.Book, "nav_reader")
     )

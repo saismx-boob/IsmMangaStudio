@@ -83,6 +83,7 @@ import java.io.File
 
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import com.example.ui.components.GeneratedMangaPanelsGallery
 import com.example.ui.components.MangaProjectGallery
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -98,9 +99,10 @@ fun ReaderGalleryScreen(
     val pages by viewModel.currentPages.collectAsState()
     val panels by viewModel.currentPanels.collectAsState()
     val projectCharacters by viewModel.projectCharacters.collectAsState()
+    val allGeneratedPanels by viewModel.allGeneratedPanels.collectAsState()
 
     var showNewProjectDialog by remember { mutableStateOf(false) }
-    var currentViewMode by remember { mutableStateOf("GALLERY") } // "GALLERY" or "READER"
+    var currentViewMode by remember { mutableStateOf("GALLERY") } // "GALLERY", "PANELS", or "READER"
 
     Scaffold(
         floatingActionButton = {
@@ -167,7 +169,7 @@ fun ReaderGalleryScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Mode Selector Bar: Galerie des Projets vs Lecteur Webtoon
+                // Mode Selector Bar: Galerie des Projets vs Cases Coil vs Lecteur Webtoon
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -194,13 +196,42 @@ fun ReaderGalleryScreen(
                                 imageVector = Icons.Default.Collections,
                                 contentDescription = null,
                                 tint = if (currentViewMode == "GALLERY") Color.White else TextSecondary,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(14.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Galerie Projets (${projects.size})",
+                                text = "Projets (${projects.size})",
                                 color = if (currentViewMode == "GALLERY") Color.White else TextSecondary,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Surface(
+                        color = if (currentViewMode == "PANELS") MangaCrimson else Color.Transparent,
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { currentViewMode = "PANELS" }
+                            .testTag("tab_panels_gallery_mode")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = if (currentViewMode == "PANELS") Color.White else ManhuaCyan,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Cases Coil (${allGeneratedPanels.size})",
+                                color = if (currentViewMode == "PANELS") Color.White else TextSecondary,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -223,17 +254,30 @@ fun ReaderGalleryScreen(
                                 imageVector = Icons.AutoMirrored.Filled.MenuBook,
                                 contentDescription = null,
                                 tint = if (currentViewMode == "READER") Color.White else TextSecondary,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(14.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Lecture Webtoon",
+                                text = "Webtoon",
                                 color = if (currentViewMode == "READER") Color.White else TextSecondary,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
+                }
+            }
+
+            // Display Generated Manga Panels Gallery (Coil based with local save, delete, export)
+            if (currentViewMode == "PANELS") {
+                item {
+                    GeneratedMangaPanelsGallery(
+                        viewModel = viewModel,
+                        onOpenInStudio = { panel ->
+                            viewModel.selectPanelForEditing(panel.panelIndex)
+                            onNavigateBackToStudio()
+                        }
+                    )
                 }
             }
 

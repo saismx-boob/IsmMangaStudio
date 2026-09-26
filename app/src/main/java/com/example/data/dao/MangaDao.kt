@@ -105,6 +105,9 @@ interface MangaPanelDao {
     @Query("SELECT * FROM manga_panels WHERE pageId = :pageId ORDER BY panelIndex ASC")
     fun getPanelsForPage(pageId: Long): Flow<List<MangaPanel>>
 
+    @Query("SELECT * FROM manga_panels WHERE imagePath IS NOT NULL AND imagePath != '' ORDER BY id DESC")
+    fun getAllGeneratedPanels(): Flow<List<MangaPanel>>
+
     @Query("SELECT p.* FROM manga_panels p INNER JOIN manga_pages pg ON p.pageId = pg.id WHERE pg.projectId = :projectId ORDER BY pg.pageNumber ASC, p.panelIndex ASC")
     fun getPanelsForProject(projectId: Long): Flow<List<MangaPanel>>
 

@@ -76,6 +76,7 @@ class MangaRepository(private val database: AppDatabase) {
     }
 
     // Panels
+    val allGeneratedPanels: Flow<List<MangaPanel>> = database.panelDao().getAllGeneratedPanels()
     fun getPanelsForPage(pageId: Long): Flow<List<MangaPanel>> = database.panelDao().getPanelsForPage(pageId)
     fun getPanelsForProject(projectId: Long): Flow<List<MangaPanel>> = database.panelDao().getPanelsForProject(projectId)
     suspend fun getPanelById(id: Long) = database.panelDao().getPanelById(id)

@@ -442,6 +442,9 @@ fun StoryboardScreen(
                         onApplyLayout = { updatedPanels, layoutType ->
                             viewModel.applyCustomLayoutDefinition(updatedPanels, layoutType)
                         },
+                        onGenerateScenePrompts = { char, style, theme, setting, mood, cam ->
+                            viewModel.generateScenePromptDrafts(char, style, theme, setting, mood, cam)
+                        },
                         onNavigateBack = onNavigateBack,
                         modifier = Modifier.fillMaxSize()
                     )

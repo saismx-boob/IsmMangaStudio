@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ai.CameraPerspective
@@ -10,6 +11,7 @@ import com.example.ai.LineWeightStyle
 import com.example.ai.MangaArtStyle
 import com.example.ai.MangaGenerationResult
 import com.example.ai.PromptConsistencyEngine
+import com.example.ai.ScenePromptDraft
 import com.example.data.database.AppDatabase
 import com.example.data.model.BackgroundProfile
 import com.example.data.model.CharacterProfile
@@ -87,6 +89,9 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _allProjectPanels = MutableStateFlow<List<MangaPanel>>(emptyList())
     val allProjectPanels: StateFlow<List<MangaPanel>> = _allProjectPanels.asStateFlow()
+
+    val allGeneratedPanels: StateFlow<List<MangaPanel>> = repository.allGeneratedPanels
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private var projectCharactersJob: Job? = null
     private var projectPanelsJob: Job? = null
@@ -317,6 +322,55 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
                 generationStage = "",
                 statusMessage = "Prompt enrichi avec cadrage & onomatopée !"
             )
+        }
+    }
+
+    /**
+     * Generates rich descriptive scene prompt drafts using Gemini 3.5 Flash,
+     * tailored to the chosen character, visual DNA, and manga art style.
+     */
+    suspend fun generateScenePromptDrafts(
+        character: CharacterProfile?,
+        artStyle: MangaArtStyle,
+        sceneTheme: String = "",
+        setting: String = "",
+        mood: String = "",
+        cameraAngle: String = ""
+    ): List<ScenePromptDraft> {
+        return geminiService.generateScenePromptDrafts(
+            character = character,
+            artStyle = artStyle,
+            sceneTheme = sceneTheme,
+            setting = setting,
+            mood = mood,
+            cameraAngle = cameraAngle
+        )
+    }
+
+    /**
+     * Updates an individual panel prompt and metadata directly from the canvas editor.
+     */
+    fun applyPromptToCanvasPanel(
+        panelIndex: Int,
+        prompt: String,
+        characterId: Long? = null,
+        backgroundId: Long? = null,
+        soundEffect: String? = null
+    ) {
+        val currentList = _currentPanels.value.toMutableList()
+        if (panelIndex in currentList.indices) {
+            val p = currentList[panelIndex]
+            val updated = p.copy(
+                userPrompt = prompt,
+                characterId = characterId ?: p.characterId,
+                backgroundId = backgroundId ?: p.backgroundId,
+                dialogueText = if (!soundEffect.isNullOrBlank() && p.dialogueText.isNullOrBlank()) soundEffect else p.dialogueText
+            )
+            currentList[panelIndex] = updated
+            _currentPanels.value = currentList
+            viewModelScope.launch {
+                repository.savePanel(updated)
+            }
         }
     }
 
@@ -610,6 +664,135 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
             repository.deleteCharacter(character)
             if (_editorState.value.selectedCharacterId == character.id) {
                 _editorState.value = _editorState.value.copy(selectedCharacterId = null)
+            }
+        }
+    }
+
+    fun addReferenceImageToCharacter(characterId: Long, imagePath: String) {
+        viewModelScope.launch {
+            val char = repository.getCharacterById(characterId) ?: return@launch
+            val currentRefs = char.getReferenceImagesList().toMutableList()
+            if (!currentRefs.contains(imagePath)) {
+                currentRefs.add(imagePath)
+            }
+            val primary = currentRefs.firstOrNull() ?: imagePath
+            val secondary = if (currentRefs.size > 1) currentRefs.drop(1).joinToString("||") else ""
+            val updated = char.copy(
+                referenceImagePath = primary,
+                secondaryReferenceImages = secondary
+            )
+            repository.saveCharacter(updated)
+            _editorState.value = _editorState.value.copy(
+                statusMessage = "Image de référence ajoutée pour ${char.name} !"
+            )
+        }
+    }
+
+    fun removeReferenceImageFromCharacter(characterId: Long, imagePath: String) {
+        viewModelScope.launch {
+            val char = repository.getCharacterById(characterId) ?: return@launch
+            val currentRefs = char.getReferenceImagesList().filter { it != imagePath }
+            val primary = currentRefs.firstOrNull()
+            val secondary = if (currentRefs.size > 1) currentRefs.drop(1).joinToString("||") else ""
+            val updated = char.copy(
+                referenceImagePath = primary,
+                secondaryReferenceImages = secondary,
+                firstAppearanceImagePath = if (char.firstAppearanceImagePath == imagePath) null else char.firstAppearanceImagePath
+            )
+            repository.saveCharacter(updated)
+            _editorState.value = _editorState.value.copy(
+                statusMessage = "Image de référence supprimée."
+            )
+        }
+    }
+
+    fun setPrimaryReferenceImage(characterId: Long, imagePath: String) {
+        viewModelScope.launch {
+            val char = repository.getCharacterById(characterId) ?: return@launch
+            val currentRefs = char.getReferenceImagesList().filter { it != imagePath }.toMutableList()
+            currentRefs.add(0, imagePath)
+            val secondary = if (currentRefs.size > 1) currentRefs.drop(1).joinToString("||") else ""
+            val updated = char.copy(
+                referenceImagePath = imagePath,
+                secondaryReferenceImages = secondary
+            )
+            repository.saveCharacter(updated)
+            _editorState.value = _editorState.value.copy(
+                statusMessage = "Image définie comme référence principale pour ${char.name} !"
+            )
+        }
+    }
+
+    /**
+     * Generates a character concept / reference turnaround sheet image using Gemini AI
+     * and automatically associates it with the character's unique ID (#visualUid) for consistent scene generation.
+     */
+    fun generateCharacterReferenceSheet(
+        character: CharacterProfile,
+        sheetType: String = "PORTRAIT"
+    ) {
+        viewModelScope.launch {
+            _editorState.value = _editorState.value.copy(
+                isGenerating = true,
+                generationStage = "Création du modèle de référence #${character.visualUid} par l'IA..."
+            )
+
+            val typeDescription = when (sheetType) {
+                "TURNAROUND" -> "Character turnaround design sheet with front, 3/4, and side angle views, full-body model sheet"
+                "ACTION_POSE" -> "Dynamic character pose sheet showing signature combat stance and costume silhouette"
+                "EXPRESSIONS" -> "Character expression sheet with multiple facial emotions (determined, smiling, shocked, combat scream)"
+                else -> "High-detail front portrait character reference card, official character art"
+            }
+
+            val referencePrompt = "Character design model sheet: $typeDescription. " +
+                "Character Name: ${character.name}, Archetype: ${character.role}, Age: ${character.ageCategory}. " +
+                "Facial Likeness: ${character.defaultExpression}, eyes: ${character.eyeDescription}. " +
+                "Hair: ${character.hairStyleColor}. " +
+                "Costume & Attire: ${character.clothingDescription}. " +
+                "Distinctive Features: ${character.distinctiveFeatures}. " +
+                "Visual UID: #${character.visualUid}, Seed: ${character.canonicalSeed}. " +
+                "Style: [${character.preferredArtStyle}], crisp inking, clean white/neutral background, studio lighting, publication manga quality, no text artifacts."
+
+            val result = geminiService.generateMangaPanel(
+                prompt = referencePrompt,
+                aspectRatio = "1:1",
+                referenceImagePaths = character.getReferenceImagesList()
+            )
+
+            when (result) {
+                is MangaGenerationResult.Success -> {
+                    val currentRefs = character.getReferenceImagesList().toMutableList()
+                    currentRefs.add(0, result.imagePath)
+                    val secondary = if (currentRefs.size > 1) currentRefs.drop(1).joinToString("||") else ""
+                    val updated = character.copy(
+                        referenceImagePath = result.imagePath,
+                        secondaryReferenceImages = secondary,
+                        firstAppearanceImagePath = character.firstAppearanceImagePath ?: result.imagePath
+                    )
+                    repository.saveCharacter(updated)
+                    _editorState.value = _editorState.value.copy(
+                        isGenerating = false,
+                        generationStage = "",
+                        statusMessage = "Modèle de référence #${character.visualUid} généré et lié avec succès !"
+                    )
+                }
+                is MangaGenerationResult.Error -> {
+                    if (result.fallbackImagePath != null) {
+                        val currentRefs = character.getReferenceImagesList().toMutableList()
+                        currentRefs.add(0, result.fallbackImagePath)
+                        val secondary = if (currentRefs.size > 1) currentRefs.drop(1).joinToString("||") else ""
+                        val updated = character.copy(
+                            referenceImagePath = result.fallbackImagePath,
+                            secondaryReferenceImages = secondary
+                        )
+                        repository.saveCharacter(updated)
+                    }
+                    _editorState.value = _editorState.value.copy(
+                        isGenerating = false,
+                        generationStage = "",
+                        errorMessage = result.message
+                    )
+                }
             }
         }
     }
@@ -1008,6 +1191,112 @@ class MangaStudioViewModel(application: Application) : AndroidViewModel(applicat
             _editorState.value = _editorState.value.copy(
                 statusMessage = "Mise en page canvas appliquée (${customPanels.size} cases personnalisées, bulles positionnées) !"
             )
+        }
+    }
+
+    /**
+     * Deletes a generated panel either by deleting the record completely or by wiping
+     * the image file and clearing the imagePath from the database.
+     */
+    fun deleteGeneratedPanelArtwork(panel: MangaPanel, deleteEntirePanel: Boolean = false) {
+        viewModelScope.launch {
+            // Delete local physical image file if present
+            if (!panel.imagePath.isNullOrBlank()) {
+                try {
+                    val file = java.io.File(panel.imagePath)
+                    if (file.exists()) {
+                        file.delete()
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            if (deleteEntirePanel) {
+                repository.deletePanel(panel)
+                _editorState.value = _editorState.value.copy(
+                    statusMessage = "Case #${panel.panelIndex + 1} supprimée avec succès."
+                )
+            } else {
+                val updated = panel.copy(imagePath = null)
+                repository.savePanel(updated)
+                _editorState.value = _editorState.value.copy(
+                    statusMessage = "Illustration de la case #${panel.panelIndex + 1} supprimée."
+                )
+            }
+        }
+    }
+
+    /**
+     * Saves high-resolution generated panel artwork locally into device's Pictures/MangaStudio gallery.
+     */
+    fun savePanelToDeviceGallery(
+        context: Context,
+        panel: MangaPanel,
+        onResult: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            try {
+                val bitmap = com.example.util.MangaPanelExporter.renderHighResBitmap(
+                    context = context,
+                    panel = panel,
+                    panelNumber = panel.panelIndex + 1
+                )
+                val result = com.example.util.MangaPanelExporter.saveToGallery(
+                    context = context,
+                    bitmap = bitmap,
+                    filenamePrefix = "manga_case_${panel.id}"
+                )
+                if (result.isSuccess) {
+                    val msg = "Case #${panel.panelIndex + 1} enregistrée dans Pictures/MangaStudio !"
+                    _editorState.value = _editorState.value.copy(statusMessage = msg)
+                    onResult(true, msg)
+                } else {
+                    val err = result.exceptionOrNull()?.localizedMessage ?: "Erreur d'enregistrement"
+                    _editorState.value = _editorState.value.copy(errorMessage = err)
+                    onResult(false, err)
+                }
+            } catch (e: Exception) {
+                val err = e.localizedMessage ?: "Échec de l'export local"
+                _editorState.value = _editorState.value.copy(errorMessage = err)
+                onResult(false, err)
+            }
+        }
+    }
+
+    /**
+     * Exports panel artwork as a PNG share intent for local sharing or saving to device apps.
+     */
+    fun exportPanelArtwork(
+        context: Context,
+        panel: MangaPanel,
+        onResult: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            try {
+                val bitmap = com.example.util.MangaPanelExporter.renderHighResBitmap(
+                    context = context,
+                    panel = panel,
+                    panelNumber = panel.panelIndex + 1
+                )
+                val result = com.example.util.MangaPanelExporter.createShareIntent(
+                    context = context,
+                    bitmap = bitmap,
+                    panelNumber = panel.panelIndex + 1
+                )
+                if (result.isSuccess) {
+                    val intent = result.getOrNull()
+                    if (intent != null) {
+                        context.startActivity(intent)
+                        onResult(true, "Partage initié")
+                    }
+                } else {
+                    val err = result.exceptionOrNull()?.localizedMessage ?: "Erreur d'export"
+                    onResult(false, err)
+                }
+            } catch (e: Exception) {
+                onResult(false, e.localizedMessage ?: "Erreur")
+            }
         }
     }
 }

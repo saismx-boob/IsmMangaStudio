@@ -10,6 +10,7 @@ import android.graphics.Path
 import android.util.Base64
 import android.util.Log
 import com.example.BuildConfig
+import com.example.data.model.CharacterProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -26,6 +27,18 @@ sealed class MangaGenerationResult {
     data class Success(val imagePath: String, val enrichedPrompt: String, val isAiGenerated: Boolean) : MangaGenerationResult()
     data class Error(val message: String, val fallbackImagePath: String? = null) : MangaGenerationResult()
 }
+
+/**
+ * AI-generated scene prompt draft suggestion for manga panels.
+ */
+data class ScenePromptDraft(
+    val title: String,
+    val description: String,
+    val camera: String,
+    val lightingMood: String,
+    val soundEffect: String,
+    val formattedPrompt: String
+)
 
 class GeminiMangaService(private val context: Context) {
 
@@ -229,6 +242,189 @@ class GeminiMangaService(private val context: Context) {
             Log.e("GeminiMangaService", "Failed storyboard assistant", e)
         }
         return@withContext userIdea
+    }
+
+    /**
+     * Generates 3 distinct, highly descriptive scene prompt drafts based on the selected character,
+     * character visual DNA, and chosen manga art style using Gemini 3.5 Flash.
+     */
+    suspend fun generateScenePromptDrafts(
+        character: CharacterProfile?,
+        artStyle: MangaArtStyle,
+        sceneTheme: String = "",
+        setting: String = "",
+        mood: String = "",
+        cameraAngle: String = ""
+    ): List<ScenePromptDraft> = withContext(Dispatchers.IO) {
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        val charDna = buildString {
+            if (character != null) {
+                append("Personnage: ${character.name} (Visual UID: #${character.visualUid}), Rôle: ${character.role}. ")
+                if (character.hairStyleColor.isNotBlank()) append("Cheveux: ${character.hairStyleColor}. ")
+                if (character.eyeDescription.isNotBlank()) append("Yeux: ${character.eyeDescription}. ")
+                if (character.clothingDescription.isNotBlank()) append("Tenue: ${character.clothingDescription}. ")
+                if (character.distinctiveFeatures.isNotBlank()) append("Traits: ${character.distinctiveFeatures}. ")
+            } else {
+                append("Personnage: Protagoniste principal de manga. ")
+            }
+        }
+
+        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
+            return@withContext createFallbackSceneDrafts(
+                character = character,
+                artStyle = artStyle,
+                sceneTheme = sceneTheme,
+                setting = setting,
+                mood = mood,
+                cameraAngle = cameraAngle
+            )
+        }
+
+        try {
+            val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$apiKey"
+            val promptText = """
+                Tu es un mangaka légendaire et directeur artistique de bande dessinée (Manga, Manhua, Comics).
+                Rédige 3 propositions variées et ultra-descriptives de scènes cinématographiques pour une case.
+                
+                $charDna
+                Style graphique requis: ${artStyle.displayName} (${artStyle.subtitle}).
+                Idée / Action de départ: ${sceneTheme.ifBlank { "Action décisive ou moment clé d'affrontement" }}.
+                Décor / Lieu: ${setting.ifBlank { "Décor manga immersif et stylisé" }}.
+                Ambiance lumineuse: ${mood.ifBlank { "Éclairage dramatique et ombres denses" }}.
+                Cadrage souhaité: ${cameraAngle.ifBlank { "Dynamique et percutant" }}.
+
+                Règles impératives:
+                - Proposition 1: Climax d'Action Héroïque avec lignes de vitesse, mouvement extrême et impact.
+                - Proposition 2: Tension Psychologique & Face-à-face avec cadrage serré sur le regard et suspense.
+                - Proposition 3: Révélation d'Ambiance & Décor immersif avec posture charismatique et éclairage stylisé.
+                - Le champ 'formattedPrompt' doit contenir le prompt final complet prêt pour le moteur de dessin, incluant le nom et traits du personnage (#UID), le lieu, l'angle, et le style graphique ${artStyle.displayName}.
+
+                Réponds UNIQUEMENT par un JSON valide (sans explications autour) au format:
+                [
+                  {
+                    "title": "Titre court de la proposition",
+                    "description": "Description visuelle détaillée de la scène en français",
+                    "camera": "Angle de prise de vue (ex: Contre-plongée héroïque)",
+                    "lightingMood": "Ambiance lumineuse (ex: Rim light cyan et ombres kakeami)",
+                    "soundEffect": "Onomatopée sonore manga (ex: DODODODO, BAM, SHING)",
+                    "formattedPrompt": "Prompt d'illustration complet"
+                  }
+                ]
+            """.trimIndent()
+
+            val json = JSONObject().apply {
+                val parts = JSONArray().put(JSONObject().put("text", promptText))
+                val content = JSONObject().put("parts", parts)
+                put("contents", JSONArray().put(content))
+            }
+
+            val request = Request.Builder()
+                .url(url)
+                .post(json.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+
+            val response = okHttpClient.newCall(request).execute()
+            val respBody = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                val respJson = JSONObject(respBody)
+                val rawText = respJson.optJSONArray("candidates")
+                    ?.optJSONObject(0)
+                    ?.optJSONObject("content")
+                    ?.optJSONArray("parts")
+                    ?.optJSONObject(0)
+                    ?.optString("text") ?: ""
+
+                val parsedList = parseDraftsJson(rawText)
+                if (parsedList.isNotEmpty()) {
+                    return@withContext parsedList
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("GeminiMangaService", "Error generating scene prompt drafts with Gemini", e)
+        }
+
+        return@withContext createFallbackSceneDrafts(
+            character = character,
+            artStyle = artStyle,
+            sceneTheme = sceneTheme,
+            setting = setting,
+            mood = mood,
+            cameraAngle = cameraAngle
+        )
+    }
+
+    private fun parseDraftsJson(rawText: String): List<ScenePromptDraft> {
+        val clean = rawText
+            .replace("```json", "")
+            .replace("```", "")
+            .trim()
+
+        val drafts = mutableListOf<ScenePromptDraft>()
+        try {
+            val jsonArray = JSONArray(clean)
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                drafts.add(
+                    ScenePromptDraft(
+                        title = obj.optString("title", "Scène ${i + 1}"),
+                        description = obj.optString("description", ""),
+                        camera = obj.optString("camera", "Plan moyen"),
+                        lightingMood = obj.optString("lightingMood", "Dramatique"),
+                        soundEffect = obj.optString("soundEffect", "DODODO"),
+                        formattedPrompt = obj.optString("formattedPrompt", "")
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.w("GeminiMangaService", "Could not parse Gemini JSON scene drafts: ${e.message}")
+        }
+        return drafts
+    }
+
+    private fun createFallbackSceneDrafts(
+        character: CharacterProfile?,
+        artStyle: MangaArtStyle,
+        sceneTheme: String,
+        setting: String,
+        mood: String,
+        cameraAngle: String
+    ): List<ScenePromptDraft> {
+        val charName = character?.name ?: "Le Héros"
+        val charUid = character?.visualUid ?: "UID-CANON"
+        val hair = character?.hairStyleColor?.ifBlank { "cheveux flottant au vent" } ?: "cheveux dynamiques"
+        val eyes = character?.eyeDescription?.ifBlank { "regard déterminé" } ?: "regard intense"
+        val attire = character?.clothingDescription?.ifBlank { "tenue d'action" } ?: "tenue de combat"
+        val loc = setting.ifBlank { "toits de la métropole sous la pluie nocturne" }
+        val actionTheme = sceneTheme.ifBlank { "affrontement décisif" }
+        val lighting = mood.ifBlank { "contre-jour dramatique avec rim light vif" }
+        val cam = cameraAngle.ifBlank { "Contre-plongée dynamique" }
+
+        return listOf(
+            ScenePromptDraft(
+                title = "Climax d'Action & Impact",
+                description = "$charName (#$charUid) exécute un bond fulgurant en plein $actionTheme, $hair, $eyes étincelant de bravoure. L'impact brise le sol dans un décor de $loc.",
+                camera = "Contre-plongée héroïque dynamique",
+                lightingMood = "$lighting, étincelles d'énergie et traînées de vitesse",
+                soundEffect = "💥 BAM !!",
+                formattedPrompt = "Manga illustration: $charName (#$charUid) in dynamic airborne combat impact, $hair, $eyes, wearing $attire. Setting: $loc. Camera: Contre-plongée héroïque, motion speedlines. Style: ${artStyle.displayName} (${artStyle.subtitle}), crisp G-pen inking, high contrast."
+            ),
+            ScenePromptDraft(
+                title = "Tension Psychologique & Regard",
+                description = "Gros plan cinématographique sur $charName (#$charUid), le visage balafré par l'effort, $eyes fixé sur l'adversaire avec une résolution inébranlable. Ambiance lourde à $loc.",
+                camera = "Gros plan serré (Dutch angle dramatique)",
+                lightingMood = "Ombres kakeami denses, clair de lune rasant et gouttes de sueur",
+                soundEffect = "⚡ GOGOGO...",
+                formattedPrompt = "Manga illustration: Dramatic close-up Dutch angle on $charName (#$charUid), intense expressive facial focus, $eyes, resolute expression, fine hatching. Setting: $loc. Lighting: $lighting. Style: ${artStyle.displayName}, authentic screentone texture."
+            ),
+            ScenePromptDraft(
+                title = "Posture Mythique & Décor Immersif",
+                description = "$charName (#$charUid) se tient majestueusement au centre de $loc, sa $attire flottant dans la tempête, contemplant le champ de bataille après $actionTheme.",
+                camera = "Plan large immersif en plongée atmosphérique",
+                lightingMood = "Ciel menaçant avec rayons dorés perçant la brume",
+                soundEffect = "🌬️ SHIIIN...",
+                formattedPrompt = "Manga illustration: Wide atmospheric panoramic panel, $charName (#$charUid) standing heroically, $attire billowing in the wind. Detailed architectural environment: $loc. Camera: Plan large atmosphérique. Style: ${artStyle.displayName} (${artStyle.subtitle}), masterwork inking."
+            )
+        )
     }
 
     private fun encodeImageToBase64(file: File): String? {

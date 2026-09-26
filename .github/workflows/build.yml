@@ -2,43 +2,63 @@ name: Android CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
   pull_request:
-    branches: [ "main" ]
-  workflow_dispatch: # Permet de lancer le build manuellement depuis l'interface
+    branches: [ "main", "master" ]
+  workflow_dispatch:
 
 jobs:
   build:
+    name: Build & Package APK
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout du code
-      uses: actions/checkout@v4
+      - name: Checkout du code
+        uses: actions/checkout@v4
 
-    - name: Configuration de Java 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+      - name: Configuration de Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
 
-    - name: Configuration de Gradle
-      uses: gradle/actions/setup-gradle@v4
+      - name: Configuration du SDK Android
+        uses: android-actions/setup-android@v3
 
-    - name: Génération du Wrapper Gradle
-      run: gradle wrapper
-      # Cette étape crée le fichier gradlew manquant
+      - name: Configuration de Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-    - name: Rendre gradlew exécutable
-      run: chmod +x ./gradlew
-      # Cette étape donne les droits d'exécution au fichier fraîchement créé
+      - name: Rendre gradlew exécutable
+        run: chmod +x ./gradlew
 
-    - name: Compilation de l'APK (Debug)
-      run: ./gradlew assembleDebug
-      # Cette étape compile votre application Kotlin
+      - name: Préparer le Keystore de Debug
+        run: |
+          if [ -f debug.keystore.base64 ]; then
+            echo "Restauration du keystore de debug depuis debug.keystore.base64..."
+            base64 -d debug.keystore.base64 > debug.keystore
+          elif [ ! -f debug.keystore ]; then
+            echo "Génération automatique d'un keystore de debug..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
-    - name: Upload de l'APK Debug
-      uses: actions/upload-artifact@v4
-      with:
-          name: application-debug
+      - name: Préparer la configuration d'environnement (.env)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ ! -f .env ] && [ -f .env.example ]; then
+            cp .env.example .env
+          fi
+          if [ -n "$GEMINI_API_KEY" ]; then
+            echo "Injection du secret GEMINI_API_KEY..."
+            echo "GEMINI_API_KEY=$GEMINI_API_KEY" >> .env
+          fi
+
+      - name: Compilation de l'APK (Debug)
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload de l'APK Debug
+        uses: actions/upload-artifact@v4
+        with:
+          name: MangaStudio-Debug-APK
           path: app/build/outputs/apk/debug/*.apk
-      # Cette étape vous permet de télécharger l'APK à la fin du build
+          if-no-files-found: error

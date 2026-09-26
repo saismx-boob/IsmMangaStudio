@@ -23,7 +23,9 @@ jobs:
           distribution: 'temurin'
 
       - name: Configuration du SDK Android
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
 
       - name: Configuration de Gradle
         uses: gradle/actions/setup-gradle@v4
